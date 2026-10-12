@@ -174,6 +174,13 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       return null;
     }
 
+    // source image sizing behaviour (contain vs cover) — cover crops
+    // vertically and makes imported cards look squashed
+    const firstImg = imgs.find(Boolean);
+    const slideFit = firstImg
+      ? (W.getComputedStyle(firstImg as Element).objectFit || undefined)
+      : undefined;
+
     const slides = kids.map((_, i) => ({
       id: uid('sl'),
       assetSrc: registerSrc(imgs[i]?.getAttribute('src') ?? ''),
@@ -288,6 +295,7 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
         slides, autoplay: true, intervalMs, transitionMs,
         pauseOnHover: /clearInterval/.test(cfg.html) && /mouseenter|mouseover/.test(cfg.html),
         variant,
+        ...(slideFit && slideFit !== 'cover' ? { slideFit } : {}),
         ...(geom.slideWPct != null ? geom : {}),
       },
     };

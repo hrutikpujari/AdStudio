@@ -17,10 +17,10 @@ import type { CSSProperties } from 'react';
  * Live animation runs in the preview iframe, which renders the exported HTML.
  */
 
-function SlideThumb({ slide, assets, accent }: { slide: SlideConfig; assets: AssetRef[]; accent: string }) {
+function SlideThumb({ slide, assets, accent, fit = 'cover' }: { slide: SlideConfig; assets: AssetRef[]; accent: string; fit?: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down' }) {
   const src = slide.assetId ? assets.find((a) => a.id === slide.assetId)?.src : '';
   if (src) {
-    return <img src={src} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />;
+    return <img src={src} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: fit, display: 'block' }} />;
   }
   return (
     <div className="ce-ph" style={{ borderColor: accent, color: accent }}>
@@ -45,7 +45,7 @@ function CarouselView({ el, assets }: { el: CarouselElement; assets: AssetRef[] 
         transform: `translate(calc(-50% ${dir > 0 ? '+' : '-'} ${sx}%), -50%) scale(${ss})`,
         opacity: 0.5, filter: stage ? 'brightness(.45) saturate(.5)' : undefined, zIndex: 2,
       }}>
-        <SlideThumb slide={slides[idx]} assets={assets} accent="#b3e0ff" />
+        <SlideThumb slide={slides[idx]} assets={assets} accent="#b3e0ff" fit={c.slideFit} />
       </div>
     );
   return (
@@ -56,7 +56,7 @@ function CarouselView({ el, assets }: { el: CarouselElement; assets: AssetRef[] 
         position: 'absolute', top: '50%', left: '50%', width: `${sw}%`, height: `${sh}%`,
         transform: 'translate(-50%, -50%)', zIndex: 3, boxShadow: '0 2px 10px rgba(0,0,0,.18)',
       }}>
-        {slides[0] ? <SlideThumb slide={slides[0]} assets={assets} accent="#b3e0ff" /> : null}
+        {slides[0] ? <SlideThumb slide={slides[0]} assets={assets} accent="#b3e0ff" fit={c.slideFit} /> : null}
       </div>
     </div>
   );

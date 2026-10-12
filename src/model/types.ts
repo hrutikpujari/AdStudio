@@ -96,6 +96,8 @@ export interface CarouselConfig {
   slideHPct?: number;
   sideXPct?: number;
   sideScale?: number;
+  /** measured object-fit for slide images; undefined = 'cover' */
+  slideFit?: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down';
 }
 
 export interface CardStackConfig {

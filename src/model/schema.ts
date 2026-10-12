@@ -94,6 +94,7 @@ const elementSchema = z.discriminatedUnion('type', [
       slideHPct: z.number().min(5).max(200).optional(),
       sideXPct: z.number().min(0).max(500).optional(),
       sideScale: z.number().min(0.05).max(1.5).optional(),
+      slideFit: z.enum(['fill', 'contain', 'cover', 'none', 'scale-down']).optional(),
     }),
   }),
   z.object({

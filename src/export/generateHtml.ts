@@ -146,7 +146,8 @@ function genCarousel(ctx: Ctx, el: CarouselElement, z: number): ComponentOut {
 #css-${el.id} .cr-item.center{transform:translate(-50%,-50%) scale(1);opacity:1;z-index:3;filter:none}
 #css-${el.id} .cr-item.left{transform:translate(calc(-50% - ${sx}%),-50%) scale(${ss});opacity:.5;z-index:2${stage ? ';filter:brightness(.45) saturate(.5)' : ''}}
 #css-${el.id} .cr-item.right{transform:translate(calc(-50% + ${sx}%),-50%) scale(${ss});opacity:.5;z-index:2${stage ? ';filter:brightness(.45) saturate(.5)' : ''}}
-#css-${el.id} .cr-item.hidden{transform:translate(calc(-50% - 160%),-50%) scale(.4);opacity:0;z-index:0}`;
+#css-${el.id} .cr-item.hidden{transform:translate(calc(-50% - 160%),-50%) scale(.4);opacity:0;z-index:0}
+#css-${el.id} .cr-img{object-fit:${c.slideFit ?? 'cover'}}`;
   const runtime = `(function(){
  var wrap=document.querySelector('#css-${el.id} .cr-wrap');if(!wrap)return;
  var slides=Array.prototype.slice.call(wrap.querySelectorAll('.cr-item'));
