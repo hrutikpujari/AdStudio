@@ -4,6 +4,7 @@ import {
   Box,
   Image as ImageIcon,
   Layers,
+  Columns3,
   Move3d,
   Rows3,
   Square,
@@ -31,6 +32,7 @@ const ADVANCED: { type: ElementType; label: string; icon: React.ReactNode }[] = 
   { type: 'fan-carousel', label: 'Fan Slider', icon: <Rows3 size={18} /> },
   { type: 'cube', label: '3D Cube', icon: <Move3d size={18} /> },
   { type: 'vertical-slider', label: 'Vertical Feed', icon: <Box size={18} /> },
+  { type: 'slice-flip', label: 'Slice Flip', icon: <Columns3 size={18} /> },
   { type: 'spotlight', label: 'Spotlight', icon: <Sun size={18} /> },
 ];
 

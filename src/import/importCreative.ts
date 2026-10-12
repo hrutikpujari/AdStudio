@@ -9,6 +9,7 @@ import type {
   CreativeProject,
   ImageElement,
   ShapeElement,
+  SliceFlipElement,
   SlideConfig,
   TextElement,
 } from '../model/types';
@@ -469,8 +470,73 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       };
     };
 
+    // nodes consumed by a component reconstruction — skip in walk
+    const consumed = new Set<Element>();
+    const markConsumed = (node: Element) => {
+      consumed.add(node);
+      node.querySelectorAll('*').forEach((n) => consumed.add(n));
+    };
+
+    // JS-built slice-flip creatives (BaytAlHadeeqa Slice): the slices
+    // exist only at runtime, so detection keys on the container markup
+    // plus a script array of image paths — not on rendered DOM.
+    const detectSliceFlip = async (): Promise<SliceFlipElement | null> => {
+      const sliceHost = idoc.querySelector(
+        '[class*="slices_container"],[class*="slice-inner"],[id*="slice" i]',
+      );
+      if (!sliceHost || !/rotateY\s*\(/.test(html)) return null;
+
+      // first array literal holding >=3 quoted image paths = slide list
+      let paths: string[] = [];
+      for (const m of html.matchAll(/=\s*\[((?:[^\]])*)\]/g)) {
+        const ps = [...m[1].matchAll(/['"]([^'"]+\.(?:png|jpe?g|gif|webp|svg))['"]/gi)]
+          .map((x) => x[1]);
+        if (ps.length >= 3) { paths = ps; break; }
+      }
+      if (paths.length < 3) return null;
+
+      const slides: SlideConfig[] = [];
+      for (const p of paths.slice(0, 20)) {
+        const du = await resolveRef(p);
+        slides.push({
+          id: uid('sl'),
+          assetId: du ? dataUrlToAsset.get(du) : undefined,
+          title: '', subtitle: '',
+        });
+      }
+      if (slides.filter((s) => s.assetId).length < 2) return null;
+
+      const host = (sliceHost.parentElement ?? sliceHost) as HTMLElement;
+      const r = host.getBoundingClientRect();
+      const cfgNum = (names: string[], d: number) => {
+        for (const n of names) {
+          const m = new RegExp(`${n}\\s*=\\s*(\\d+)`, 'i').exec(html);
+          if (m) return parseInt(m[1]);
+        }
+        return d;
+      };
+
+      markConsumed(host);
+      return {
+        id: uid(), type: 'slice-flip', name: 'Slice Flip',
+        x: Math.round(r.left - crect.left), y: Math.round(r.top - crect.top),
+        width: Math.max(10, Math.round(r.width)), height: Math.max(10, Math.round(r.height)),
+        rotation: 0, opacity: 1, visible: true, locked: false,
+        animation: ANIM(),
+        config: {
+          slides,
+          sliceCount: Math.min(20, Math.max(2, cfgNum(['SLICE_COUNT', 'sliceCount', 'NUM_SLICES'], 8))),
+          flipMs: Math.min(10000, Math.max(100, cfgNum(['DURATION', 'flipMs', 'flipDuration'], 1200))),
+          staggerMs: Math.min(2000, Math.max(0, cfgNum(['STAGGER', 'staggerMs'], 100))),
+          holdMs: Math.min(60000, Math.max(200, cfgNum(['HOLD', 'holdMs', 'autoplayIntervalMs'], 3000))),
+          autoplay: true,
+        },
+      };
+    };
+
     const walk = (node: Element) => {
       if (elements.length > 150) return;
+      if (consumed.has(node)) return;
       if (node.classList.contains('clickLayer') || node.id === 'clickLayer') return;
 
       const style = iwin.getComputedStyle(node);
@@ -664,6 +730,9 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       }
     };
 
+    const sliceFlipEl = await detectSliceFlip();
+    if (sliceFlipEl) elements.push(sliceFlipEl);
+
     for (const child of Array.from(container.children)) walk(child);
 
     project.assets = assets;
@@ -676,13 +745,13 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     if (!check.ok) {
       return { ok: false, fidelity: 'flattened', message: `Import produced invalid data: ${check.errors[0]}` };
     }
-    const carouselCount = elements.filter((e) => e.type === 'carousel').length;
+    const reconstructed = elements.filter((e) => e.type === 'carousel' || e.type === 'slice-flip').length;
     return {
       ok: true, fidelity: 'flattened', project: check.project,
       message: elements.length
         ? `Imported ${elements.length} element(s) + ${assets.length} asset(s)` +
-          (carouselCount
-            ? `, including ${carouselCount} working carousel(s) reconstructed from staged slides. ` +
+          (reconstructed
+            ? `, including ${reconstructed} animated component(s) reconstructed from the creative. ` +
               `Other JS-driven motion isn't reconstructed — re-add animations in the timeline.`
             : `. Off-stage/staged frames arrive as hidden layers — JS-driven motion isn't reconstructed, re-add animations in the timeline.`)
         : `Rendered but measured 0 elements — the creative likely builds its DOM in JavaScript, which is stripped on import. ${assets.length} asset(s) were added to the library.`,

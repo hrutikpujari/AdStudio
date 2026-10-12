@@ -17,6 +17,7 @@ export type ElementType =
   | 'fan-carousel'    // 3D rotateY fan (FanCarousel ref)
   | 'cube'            // rotating 3D cube, 6 faces (hala cube ref)
   | 'vertical-slider' // continuous vertical auto-scroll track (VerticalSlider ref)
+  | 'slice-flip'      // staggered vertical-slice image flip (BaytAlHadeeqa Slice ref)
   | 'spotlight';      // spotlight overlay effect layered above other content
 
 export type AnimationPreset =
@@ -121,6 +122,19 @@ export interface VerticalSliderConfig {
   pingPong: boolean;
 }
 
+export interface SliceFlipConfig {
+  slides: SlideConfig[];
+  /** number of vertical slices the image is split into */
+  sliceCount: number;
+  /** duration of a single slice's 180° flip, ms */
+  flipMs: number;
+  /** delay between consecutive slices, ms */
+  staggerMs: number;
+  /** pause between image transitions, ms */
+  holdMs: number;
+  autoplay: boolean;
+}
+
 export interface SpotlightConfig {
   /** visual intensity of the beam/pool/vignette, 0-1 */
   intensity: number;
@@ -210,6 +224,11 @@ export interface VerticalSliderElement extends BaseElement {
   config: VerticalSliderConfig;
 }
 
+export interface SliceFlipElement extends BaseElement {
+  type: 'slice-flip';
+  config: SliceFlipConfig;
+}
+
 export interface SpotlightElement extends BaseElement {
   type: 'spotlight';
   config: SpotlightConfig;
@@ -225,6 +244,7 @@ export type AdElement =
   | FanElement
   | CubeElement
   | VerticalSliderElement
+  | SliceFlipElement
   | SpotlightElement;
 
 export interface ArtboardSettings {
@@ -267,7 +287,7 @@ export const AD_SIZES = [
 ] as const;
 
 export const ADVANCED_TYPES: ElementType[] = [
-  'carousel', 'card-stack', 'fan-carousel', 'cube', 'vertical-slider', 'spotlight',
+  'carousel', 'card-stack', 'fan-carousel', 'cube', 'vertical-slider', 'slice-flip', 'spotlight',
 ];
 
 export function isAdvanced(t: ElementType): boolean {

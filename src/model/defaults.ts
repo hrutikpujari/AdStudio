@@ -153,6 +153,18 @@ export function createElement(
           pingPong: true,
         },
       };
+    case 'slice-flip':
+      return {
+        ...base('slice-flip', 'Slice Flip', Math.round(artW * 0.18), Math.round(artH * 0.3), Math.round(artW * 0.64), Math.round(artH * 0.48)),
+        config: {
+          slides: defaultSlides(6),
+          sliceCount: 8,
+          flipMs: 1200,
+          staggerMs: 100,
+          holdMs: 3000,
+          autoplay: true,
+        },
+      };
     case 'spotlight':
       return {
         ...base('spotlight', 'Spotlight', 0, 0, artW, artH),

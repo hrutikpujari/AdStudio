@@ -8,6 +8,7 @@ import type {
   FanElement,
   ImageElement,
   ShapeElement,
+  SliceFlipElement,
   SlideConfig,
   SpotlightElement,
   TextElement,
@@ -341,6 +342,68 @@ function genVerticalSlider(ctx: Ctx, el: VerticalSliderElement, z: number): Comp
   return { css, runtime, html: elShell(el, z, inner, '', ctx.scrubMs) };
 }
 
+function genSliceFlip(ctx: Ctx, el: SliceFlipElement, z: number): ComponentOut {
+  const c = el.config;
+  const W = Math.round(el.width);
+  const H = Math.round(el.height);
+  const N = Math.max(2, Math.min(20, Math.round(c.sliceCount) || 8));
+  const urls = c.slides.map((s) => (s.assetId ? ctx.assetUrl(s.assetId) : ''));
+
+  // each slice is a flip-card: front face = current image, back face =
+  // next image pre-rotated 180°, then all inners rotate 180° staggered
+  const sliceHtml: string[] = [];
+  for (let i = 0; i < N; i++) {
+    const left = Math.round((i * W) / N);
+    const right = Math.round(((i + 1) * W) / N);
+    sliceHtml.push(
+      `<div class="sf-slice" style="left:${left}px;width:${right - left}px">` +
+      `<div class="sf-inner">` +
+      `<div class="sf-face sf-front" style="background-position:-${left}px 0"></div>` +
+      `<div class="sf-face sf-back" style="background-position:-${left}px 0"></div>` +
+      `</div></div>`,
+    );
+  }
+
+  const css = `
+#css-${el.id} .sf-wrap{position:absolute;inset:0;overflow:hidden;background:#fff}
+#css-${el.id} .sf-hero{position:absolute;inset:0;background-repeat:no-repeat;background-size:${W}px ${H}px;background-position:center;z-index:1}
+#css-${el.id} .sf-slices{position:absolute;inset:0;z-index:2;perspective:3000px;transform:translateZ(0)}
+#css-${el.id} .sf-slice{position:absolute;top:0;height:100%;overflow:visible}
+#css-${el.id} .sf-inner{position:relative;width:100%;height:100%;transform-style:preserve-3d;will-change:transform;backface-visibility:hidden}
+#css-${el.id} .sf-face{position:absolute;top:0;left:0;width:100%;height:100%;background-repeat:no-repeat;background-size:${W}px ${H}px;backface-visibility:hidden}
+#css-${el.id} .sf-back{transform:rotateY(180deg) translateZ(0)}`;
+
+  const runtime = `(function(){
+ var root=document.getElementById('css-${el.id}');if(!root)return;
+ var imgs=${JSON.stringify(urls)}.filter(function(u){return !!u;});
+ if(imgs.length<2)return;
+ var hero=root.querySelector('.sf-hero'),inners=root.querySelectorAll('.sf-inner');
+ var fronts=root.querySelectorAll('.sf-front'),backs=root.querySelectorAll('.sf-back');
+ var cur=0,busy=false,N=inners.length;
+ function setFaces(nodes,url){for(var i=0;i<nodes.length;i++)nodes[i].style.backgroundImage='url("'+url+'")';}
+ setFaces(fronts,imgs[0]);setFaces(backs,imgs[1]);hero.style.backgroundImage='url("'+imgs[0]+'")';
+ function flip(){
+  if(busy)return;busy=true;
+  var next=(cur+1)%imgs.length;
+  for(var i=0;i<N;i++){
+   inners[i].style.transition='transform ${c.flipMs}ms cubic-bezier(0.65,0,0.35,1) '+(i*${c.staggerMs})+'ms';
+   inners[i].style.transform='rotateY(180deg)';
+  }
+  setTimeout(function(){
+   cur=next;
+   setFaces(fronts,imgs[cur]);setFaces(backs,imgs[(cur+1)%imgs.length]);
+   hero.style.backgroundImage='url("'+imgs[cur]+'")';
+   for(var j=0;j<N;j++){inners[j].style.transition='none';inners[j].style.transform='rotateY(0deg)';}
+   busy=false;
+  },${c.flipMs}+(N-1)*${c.staggerMs});
+ }
+ if(${c.autoplay ? 'true' : 'false'})setInterval(flip,${c.holdMs});
+})();`;
+
+  const inner = `<div class="sf-wrap"><div class="sf-hero"></div><div class="sf-slices">${sliceHtml.join('')}</div></div>`;
+  return { css, runtime, html: elShell(el, z, inner, '', ctx.scrubMs) };
+}
+
 function genSpotlight(ctx: Ctx, el: SpotlightElement, z: number): ComponentOut {
   const { intensity, beamColor } = el.config;
   const k = (a: number) => (a * intensity).toFixed(2);
@@ -397,6 +460,7 @@ export function generateHtml(
       case 'fan-carousel': { const r = genFan(ctx, el, z); componentCss.push(r.css); if (r.runtime) runtimes.push(r.runtime); html = r.html; break; }
       case 'cube': { const r = genCube(ctx, el, z); componentCss.push(r.css); html = r.html; break; }
       case 'vertical-slider': { const r = genVerticalSlider(ctx, el, z); componentCss.push(r.css); if (r.runtime) runtimes.push(r.runtime); html = r.html; break; }
+      case 'slice-flip': { const r = genSliceFlip(ctx, el, z); componentCss.push(r.css); if (r.runtime) runtimes.push(r.runtime); html = r.html; break; }
       case 'spotlight': { const r = genSpotlight(ctx, el, z); componentCss.push(r.css); html = r.html; break; }
     }
     bodyParts.push(html);

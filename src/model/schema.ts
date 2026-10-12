@@ -134,6 +134,18 @@ const elementSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...baseElement,
+    type: z.literal('slice-flip'),
+    config: z.object({
+      slides: z.array(slideSchema).min(2).max(20),
+      sliceCount: z.number().min(2).max(20),
+      flipMs: z.number().min(100).max(10000),
+      staggerMs: z.number().min(0).max(2000),
+      holdMs: z.number().min(200).max(60000),
+      autoplay: z.boolean(),
+    }),
+  }),
+  z.object({
+    ...baseElement,
     type: z.literal('spotlight'),
     config: z.object({
       intensity: z.number().min(0).max(1),

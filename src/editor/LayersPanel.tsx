@@ -17,6 +17,7 @@ import {
   MousePointerClick,
   Unlock,
   Box,
+  Columns3,
 } from 'lucide-react';
 import type { ElementType } from '../model/types';
 import { useEditor } from '../store/projectStore';
@@ -31,6 +32,7 @@ const TYPE_ICON: Record<ElementType, React.ReactNode> = {
   'fan-carousel': <Rows3 size={12} />,
   cube: <Move3d size={12} />,
   'vertical-slider': <Box size={12} />,
+  'slice-flip': <Columns3 size={12} />,
   spotlight: <Sun size={12} />,
 };
 

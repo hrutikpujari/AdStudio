@@ -5,6 +5,7 @@ import type {
   CardStackElement,
   CubeElement,
   FanElement,
+  SliceFlipElement,
   SlideConfig,
   SpotlightElement,
   VerticalSliderElement,
@@ -164,6 +165,27 @@ function VerticalSliderView({ el, assets }: { el: VerticalSliderElement; assets:
   );
 }
 
+function SliceFlipView({ el, assets }: { el: SliceFlipElement; assets: AssetRef[] }) {
+  const c = el.config;
+  const first = c.slides[0];
+  const src = first?.assetId ? assets.find((a) => a.id === first.assetId)?.src : '';
+  const N = Math.max(2, Math.min(20, Math.round(c.sliceCount) || 8));
+  return (
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#fff' }}>
+      {src
+        ? <img src={src} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }} alt="" draggable={false} />
+        : <div className="ce-ph"><span>SLICE FLIP</span><small>{c.slides.length} slides</small></div>}
+      {Array.from({ length: N - 1 }, (_, i) => (
+        <div key={i} style={{
+          position: 'absolute', top: 0, bottom: 0,
+          left: `${((i + 1) / N) * 100}%`, width: 1,
+          background: 'rgba(255,255,255,.7)', boxShadow: '0 0 0 .5px rgba(0,0,0,.08)',
+        }} />
+      ))}
+    </div>
+  );
+}
+
 function SpotlightView({ el }: { el: SpotlightElement }) {
   const k = el.config.intensity;
   const f = (a: number) => +(a * k).toFixed(2);
@@ -252,6 +274,7 @@ export function ElementView({ el, assets }: { el: AdElement; assets: AssetRef[] 
     case 'fan-carousel': return <div style={inner}><FanView el={el} assets={assets} /></div>;
     case 'cube': return <div style={inner}><CubeView el={el} assets={assets} /></div>;
     case 'vertical-slider': return <div style={inner}><VerticalSliderView el={el} assets={assets} /></div>;
+    case 'slice-flip': return <div style={inner}><SliceFlipView el={el} assets={assets} /></div>;
     case 'spotlight': return <div style={inner}><SpotlightView el={el} /></div>;
   }
 }

@@ -431,7 +431,7 @@ export function PropertiesPanel() {
         </div>
       )}
 
-      {(el.type === 'carousel' || el.type === 'fan-carousel' || el.type === 'card-stack' || el.type === 'vertical-slider') && (
+      {(el.type === 'carousel' || el.type === 'fan-carousel' || el.type === 'card-stack' || el.type === 'vertical-slider' || el.type === 'slice-flip') && (
         <>
           <SlidesEditor el={el} />
           <div className="prop-group">
@@ -478,6 +478,17 @@ export function PropertiesPanel() {
                 <Row label="Ping-pong">
                   <input type="checkbox" checked={el.config.pingPong} onChange={(e) => setCfg({ pingPong: e.target.checked })} />
                 </Row>
+              </>
+            )}
+            {el.type === 'slice-flip' && (
+              <>
+                <Row label="Slices"><Num value={el.config.sliceCount} min={2} max={20} onChange={(v) => setCfg({ sliceCount: Math.round(v) })} /></Row>
+                <Row label="Flip"><Num value={el.config.flipMs} min={100} max={10000} step={50} onChange={(v) => setCfg({ flipMs: v })} />
+                  <span style={{ color: 'var(--text-faint)', fontSize: 10 }}>ms</span></Row>
+                <Row label="Stagger"><Num value={el.config.staggerMs} min={0} max={2000} step={10} onChange={(v) => setCfg({ staggerMs: v })} />
+                  <span style={{ color: 'var(--text-faint)', fontSize: 10 }}>ms</span></Row>
+                <Row label="Hold"><Num value={el.config.holdMs} min={200} max={60000} step={100} onChange={(v) => setCfg({ holdMs: v })} />
+                  <span style={{ color: 'var(--text-faint)', fontSize: 10 }}>ms</span></Row>
               </>
             )}
           </div>
