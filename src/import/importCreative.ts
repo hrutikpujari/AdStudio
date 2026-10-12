@@ -246,8 +246,24 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     const freeze = doc.createElement('style');
     freeze.textContent = '*,*::before,*::after{animation:none!important;transition:none!important}';
     doc.head.appendChild(freeze);
+    // sentinel lets us distinguish the srcdoc document from the
+    // initial about:blank doc (whose load event fires first and would
+    // otherwise resolve our wait against an empty body)
+    const sentinel = doc.createElement('meta');
+    sentinel.setAttribute('name', 'aps-import');
+    doc.head.appendChild(sentinel);
     iframe.srcdoc = '<!doctype html>' + doc.documentElement.outerHTML;
-    await new Promise((r) => { iframe.onload = r; setTimeout(r, 1500); });
+    const deadline = performance.now() + 4000;
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        const d = iframe.contentDocument;
+        if (d?.querySelector('meta[name="aps-import"]') && d.readyState === 'complete') return resolve();
+        if (performance.now() > deadline) return resolve();
+        setTimeout(check, 50);
+      };
+      iframe.onload = check;
+      check();
+    });
     await new Promise((r) => setTimeout(r, 350)); // let images/fonts settle
 
     const idoc = iframe.contentDocument;
@@ -501,9 +517,10 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     }
     return {
       ok: true, fidelity: 'flattened', project: check.project,
-      message:
-        `Imported ${elements.length} element(s) + ${assets.length} asset(s). ` +
-        `Off-stage/staged frames arrive as hidden layers — JS-driven motion isn't reconstructed, re-add animations in the timeline.`,
+      message: elements.length
+        ? `Imported ${elements.length} element(s) + ${assets.length} asset(s). ` +
+          `Off-stage/staged frames arrive as hidden layers — JS-driven motion isn't reconstructed, re-add animations in the timeline.`
+        : `Rendered but measured 0 elements — the creative likely builds its DOM in JavaScript, which is stripped on import. ${assets.length} asset(s) were added to the library.`,
     };
   } finally {
     iframe.remove();
