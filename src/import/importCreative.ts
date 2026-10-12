@@ -274,7 +274,9 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       (idoc.body.firstElementChild as HTMLElement | null) ??
       idoc.body;
     const crect = container.getBoundingClientRect();
-    if (!m && crect.width > 10 && crect.height > 10) {
+    // the rendered container is more honest than ad.size — some
+    // creatives ship stale meta (this file says 300x600, is 300x250)
+    if (crect.width >= 40 && crect.height >= 40) {
       project.artboard.width = Math.round(crect.width);
       project.artboard.height = Math.round(crect.height);
     }
@@ -321,8 +323,10 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
 
       try {
         const r = node.getBoundingClientRect();
-        if (r.width < 4 || r.height < 4) return;
-
+        // a 0-size box just means "don't emit" — children may still
+        // be measurable (absolutely-positioned subtrees collapse
+        // their static parent's box to zero)
+        if (r.width >= 4 && r.height >= 4) {
         // recover rotation: measure the un-transformed box, then
         // center it on the transformed bounding box
         const tm = /matrix\(([^)]+)\)/.exec(style.transform);
@@ -491,6 +495,7 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
           if (w * h < crect.width * crect.height * 0.98 || !node.children.length) {
             elements.push(el);
           }
+        }
         }
 
         for (const child of Array.from(node.children)) walk(child);
