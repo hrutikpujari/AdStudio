@@ -51,6 +51,8 @@ export async function buildCreativeZip(project: CreativeProject): Promise<Blob> 
 
   const html = generateHtml(project, assetUrl);
   zip.file('index.html', html);
+  // editable source — lets "Import creative" restore full fidelity later
+  zip.file('project.json', JSON.stringify(project, null, 2));
 
   const remoteCount = project.assets.filter(
     (a) => a.kind === 'image' && !a.src.startsWith('data:'),

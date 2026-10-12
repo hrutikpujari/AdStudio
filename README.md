@@ -81,6 +81,25 @@ IIFE runtime — the same class-state technique as the reference creatives
 (`center/left/right/hidden` for coverflow, computed transforms for the fan,
 `@keyframes` spin for the cube, rAF scroll for the vertical feed).
 
+## Opening existing creatives
+
+`Open` dialog → *Import a creative file*, three paths:
+
+- **ZIP** — Studio-exported ZIPs contain `project.json` and restore at full
+  fidelity (elements, components, animations, assets). Foreign ZIPs fall
+  back to the flattened importer below.
+- **HTML** — a single `.html` creative (relative asset paths resolve only
+  if inlined as data URLs or remote).
+- **Folder** — pick a creative folder (`index.html` + `imgs/`); every
+  image/font is imported as an asset.
+
+Foreign HTML is flattened: scripts are stripped, the file renders in a
+hidden sandboxed iframe, and each visible node's computed bounds are
+measured to synthesize elements (`<img>`→image, text leaves→text,
+buttons/links→CTA, filled containers→shapes). JS-driven animation states
+collapse to their first frame — rebuild carousels/cubes as components
+after import.
+
 ## Persistence
 
 Drafts autosave to `localStorage` (`adpilot.*` keys) with a 800 ms debounce,

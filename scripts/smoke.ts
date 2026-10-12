@@ -54,7 +54,27 @@ if (!scrub.includes('animation-play-state:paused')) {
 }
 console.log('✓ scrub mode emits paused animations');
 
-// 4. validation catches bad URL
+// 4. zip round-trip: export -> project.json -> import restore
+const { buildCreativeZip } = await import('../src/export/exportZip');
+const JSZip = (await import('jszip')).default;
+const tpl = TEMPLATES[0].build();
+const blob = await buildCreativeZip(tpl);
+const buf = new Uint8Array(await blob.arrayBuffer());
+const rezip = await JSZip.loadAsync(buf);
+const files = Object.keys(rezip.files);
+if (!files.includes('index.html') || !files.includes('project.json') || !files.includes('README.txt')) {
+  console.log('✗ zip missing files:', files);
+  process.exit(1);
+}
+const pj = JSON.parse(await rezip.file('project.json')!.async('string'));
+const rt = validateProject(pj);
+if (!rt.ok || rt.project.name !== tpl.name || rt.project.elements.length !== tpl.elements.length) {
+  console.log('✗ round-trip mismatch');
+  process.exit(1);
+}
+console.log('✓ zip export + project.json round-trip restores', rt.project.elements.length, 'elements');
+
+// 5. validation catches bad URL
 const bad = createProject('Bad', 300, 250);
 const btn = createElement('button', 300, 250) as any;
 btn.url = 'javascript:alert(1)';

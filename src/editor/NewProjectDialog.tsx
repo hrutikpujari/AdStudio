@@ -1,9 +1,14 @@
-import { useState } from 'react';
-import { Trash2, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { FileArchive, FileCode, FolderOpen, Trash2, X } from 'lucide-react';
 import { AD_SIZES } from '../model/types';
 import { TEMPLATES } from '../model/defaults';
 import { useEditor } from '../store/projectStore';
 import { useUi } from '../store/uiStore';
+import {
+  importFolderFiles,
+  importHtmlFile,
+  importZip,
+} from '../import/importCreative';
 
 interface Props {
   mode: 'new' | 'open';
@@ -25,6 +30,29 @@ export function NewProjectDialog({ mode, onClose }: Props) {
   const [ch, setCh] = useState(250);
   const [tpl, setTpl] = useState<string | null>(null);
   const [saved, setSaved] = useState(listProjects());
+  const [importing, setImporting] = useState(false);
+  const zipRef = useRef<HTMLInputElement>(null);
+  const htmlRef = useRef<HTMLInputElement>(null);
+  const dirRef = useRef<HTMLInputElement>(null);
+
+  const applyImport = async (fn: () => Promise<import('../import/importCreative').ImportResult>) => {
+    if (importing) return;
+    setImporting(true);
+    try {
+      const res = await fn();
+      if (res.ok && res.project) {
+        replaceProject(res.project);
+        toast(res.message, 'ok');
+        onClose();
+      } else {
+        toast(res.message, 'err');
+      }
+    } catch (err) {
+      toast(`Import failed: ${err instanceof Error ? err.message : 'unknown error'}`, 'err');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const create = () => {
     if (tpl) {
@@ -53,12 +81,36 @@ export function NewProjectDialog({ mode, onClose }: Props) {
         </div>
         <div className="dialog-body">
           {mode === 'open' ? (
-            saved.length === 0 ? (
+            <>
+            <div className="field">
+              <label>Import a creative file</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="mini-btn" disabled={importing} onClick={() => zipRef.current?.click()} title="ZIP with project.json or index.html + assets">
+                  <FileArchive size={12} style={{ verticalAlign: -1 }} /> ZIP
+                </button>
+                <button className="mini-btn" disabled={importing} onClick={() => htmlRef.current?.click()} title="Single .html creative">
+                  <FileCode size={12} style={{ verticalAlign: -1 }} /> HTML
+                </button>
+                <button className="mini-btn" disabled={importing} onClick={() => dirRef.current?.click()} title="Folder containing index.html + imgs/">
+                  <FolderOpen size={12} style={{ verticalAlign: -1 }} /> Folder
+                </button>
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 5 }}>
+                Studio ZIPs restore fully. Other HTML creatives import as flattened,
+                editable layers (JS states collapse to frame 1).
+              </div>
+              <input ref={zipRef} type="file" accept=".zip" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) applyImport(() => importZip(f)); e.target.value = ''; }} />
+              <input ref={htmlRef} type="file" accept=".html,.htm" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) applyImport(() => importHtmlFile(f)); e.target.value = ''; }} />
+              <input ref={dirRef} type="file" hidden {...{ webkitdirectory: '', directory: '' } as object} onChange={(e) => { if (e.target.files?.length) applyImport(() => importFolderFiles(e.target.files!)); e.target.value = ''; }} />
+            </div>
+            {saved.length === 0 ? (
               <div style={{ color: 'var(--text-faint)', padding: 16, textAlign: 'center' }}>
                 No saved projects yet.
               </div>
             ) : (
-              saved.map((m) => (
+              <>
+              <label style={{ display: 'block', color: 'var(--text-dim)', margin: '10px 0 5px', fontSize: 11.5 }}>Saved projects</label>
+              {saved.map((m) => (
                 <div key={m.id} className="slide-row" style={{ marginBottom: 6 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 12 }}>{m.name}</div>
@@ -83,8 +135,10 @@ export function NewProjectDialog({ mode, onClose }: Props) {
                     <Trash2 size={11} />
                   </button>
                 </div>
-              ))
-            )
+              ))}
+              </>
+            )}
+            </>
           ) : (
             <>
               <div className="field">
