@@ -1,0 +1,7 @@
+node_modules
+dist
+dist-smoke
+scripts/smoke.mjs
+*.local
+.DS_Store
+tsconfig.tsbuildinfo
