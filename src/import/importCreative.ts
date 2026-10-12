@@ -339,6 +339,27 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     // but authored at different staging offsets. When found, synthesize
     // a real CarouselElement (which has its own working autoplay
     // runtime) instead of flattening each slide to a static image.
+    // a container can authored with height:100% of an auto-height
+    // positioned ancestor, which CSS resolves to 0 — the box collapses
+    // even though its image content still renders (unclipped overflow).
+    // Fall back to the innermost non-collapsed descendant's rect.
+    const visualRect = (el: HTMLElement): DOMRect => {
+      const r = el.getBoundingClientRect();
+      if (r.width >= 10 && r.height >= 10) return r;
+      const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+      if (img) {
+        const ir = (img as HTMLElement).getBoundingClientRect();
+        if (ir.width >= 10 && ir.height >= 10) return ir;
+      }
+      let child = el.firstElementChild as HTMLElement | null;
+      while (child) {
+        const cr = child.getBoundingClientRect();
+        if (cr.width >= 10 && cr.height >= 10) return cr;
+        child = child.firstElementChild as HTMLElement | null;
+      }
+      return r;
+    };
+
     const detectSlideGroup = (node: Element): CarouselElement | null => {
       const kids = Array.from(node.children) as HTMLElement[];
       if (kids.length < 3) return null;
@@ -349,7 +370,7 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
         k.style.setProperty('visibility', 'visible', 'important');
         k.style.setProperty('opacity', '1', 'important');
       });
-      const rects = kids.map((k) => k.getBoundingClientRect());
+      const rects = kids.map((k) => visualRect(k));
       const filters = kids.map((k) => iwin.getComputedStyle(k).filter);
       kids.forEach((k, i) => {
         if (saved[i] !== null) k.setAttribute('style', saved[i]!);
