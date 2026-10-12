@@ -146,14 +146,6 @@ const elementSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...baseElement,
-    type: z.literal('nested-creative'),
-    config: z.object({
-      html: z.string().max(8_000_000),
-      interactive: z.boolean(),
-    }),
-  }),
-  z.object({
-    ...baseElement,
     type: z.literal('spotlight'),
     config: z.object({
       intensity: z.number().min(0).max(1),

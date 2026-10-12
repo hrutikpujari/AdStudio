@@ -18,7 +18,6 @@ export type ElementType =
   | 'cube'            // rotating 3D cube, 6 faces (hala cube ref)
   | 'vertical-slider' // continuous vertical auto-scroll track (VerticalSlider ref)
   | 'slice-flip'      // staggered vertical-slice image flip (BaytAlHadeeqa Slice ref)
-  | 'nested-creative' // sealed original creative in a sandboxed iframe (unknown/JS-built motion)
   | 'spotlight';      // spotlight overlay effect layered above other content
 
 export type AnimationPreset =
@@ -136,16 +135,6 @@ export interface SliceFlipConfig {
   autoplay: boolean;
 }
 
-export interface NestedCreativeConfig {
-  /** fully self-contained creative document (assets inlined as data
-   *  URLs, scripts intact). Runs inside a sandboxed iframe — opaque
-   *  origin, cannot reach the host ad or editor */
-  html: string;
-  /** let pointer gestures (wheel/touch/drag) reach the embedded
-   *  creative instead of the artboard click layer */
-  interactive: boolean;
-}
-
 export interface SpotlightConfig {
   /** visual intensity of the beam/pool/vignette, 0-1 */
   intensity: number;
@@ -240,11 +229,6 @@ export interface SliceFlipElement extends BaseElement {
   config: SliceFlipConfig;
 }
 
-export interface NestedCreativeElement extends BaseElement {
-  type: 'nested-creative';
-  config: NestedCreativeConfig;
-}
-
 export interface SpotlightElement extends BaseElement {
   type: 'spotlight';
   config: SpotlightConfig;
@@ -261,7 +245,6 @@ export type AdElement =
   | CubeElement
   | VerticalSliderElement
   | SliceFlipElement
-  | NestedCreativeElement
   | SpotlightElement;
 
 export interface ArtboardSettings {
@@ -304,7 +287,7 @@ export const AD_SIZES = [
 ] as const;
 
 export const ADVANCED_TYPES: ElementType[] = [
-  'carousel', 'card-stack', 'fan-carousel', 'cube', 'vertical-slider', 'slice-flip', 'nested-creative', 'spotlight',
+  'carousel', 'card-stack', 'fan-carousel', 'cube', 'vertical-slider', 'slice-flip', 'spotlight',
 ];
 
 export function isAdvanced(t: ElementType): boolean {

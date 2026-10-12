@@ -31,7 +31,6 @@ export function NewProjectDialog({ mode, onClose }: Props) {
   const [tpl, setTpl] = useState<string | null>(null);
   const [saved, setSaved] = useState(listProjects());
   const [importing, setImporting] = useState(false);
-  const [sealed, setSealed] = useState(false);
   const zipRef = useRef<HTMLInputElement>(null);
   const htmlRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
@@ -96,18 +95,13 @@ export function NewProjectDialog({ mode, onClose }: Props) {
                   <FolderOpen size={12} style={{ verticalAlign: -1 }} /> Folder
                 </button>
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, fontSize: 11, color: 'var(--text-dim)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={sealed} onChange={(e) => setSealed(e.target.checked)} />
-                Preserve original animation — import sealed (not editable)
-              </label>
               <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 5 }}>
-                {sealed
-                  ? 'The creative keeps its original scripts running inside a sandboxed frame — animation is 1:1, but you can only move/resize it, not edit inside.'
-                  : 'Studio ZIPs restore fully. Other HTML creatives import as flattened, editable layers (JS states collapse to frame 1).'}
+                Studio ZIPs restore fully. Other HTML creatives import as flattened,
+                editable layers (JS states collapse to frame 1).
               </div>
-              <input ref={zipRef} type="file" accept=".zip" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) applyImport(() => importZip(f, { sealed })); e.target.value = ''; }} />
-              <input ref={htmlRef} type="file" accept=".html,.htm" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) applyImport(() => importHtmlFile(f, { sealed })); e.target.value = ''; }} />
-              <input ref={dirRef} type="file" hidden {...{ webkitdirectory: '', directory: '' } as object} onChange={(e) => { if (e.target.files?.length) applyImport(() => importFolderFiles(e.target.files!, { sealed })); e.target.value = ''; }} />
+              <input ref={zipRef} type="file" accept=".zip" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) applyImport(() => importZip(f)); e.target.value = ''; }} />
+              <input ref={htmlRef} type="file" accept=".html,.htm" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) applyImport(() => importHtmlFile(f)); e.target.value = ''; }} />
+              <input ref={dirRef} type="file" hidden {...{ webkitdirectory: '', directory: '' } as object} onChange={(e) => { if (e.target.files?.length) applyImport(() => importFolderFiles(e.target.files!)); e.target.value = ''; }} />
             </div>
             {saved.length === 0 ? (
               <div style={{ color: 'var(--text-faint)', padding: 16, textAlign: 'center' }}>

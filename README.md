@@ -93,25 +93,12 @@ IIFE runtime — the same class-state technique as the reference creatives
 - **Folder** — pick a creative folder (`index.html` + `imgs/`); every
   image/font is imported as an asset.
 
-Two fidelity modes for foreign HTML (the dialog's *Preserve original
-animation* checkbox chooses):
-
-- **Flattened (default)** — scripts are stripped, the file renders in a
-  hidden sandboxed iframe, and each visible node's computed bounds are
-  measured to synthesize elements (`<img>`→image, text leaves→text,
-  buttons/links→CTA, filled containers→shapes). Known animated
-  structures are reconstructed as real components where recognized
-  (staged-slide carousels → `carousel`, `.slices_container` creatives →
-  `slice-flip`); unknown JS-driven states collapse to their first frame.
-- **Sealed** — the original document is kept intact: every local file is
-  inlined as a data URL and the creative becomes a `nested-creative`
-  element running inside `sandbox="allow-scripts"` (opaque origin — its
-  scripts animate but cannot reach the editor, the host page, or the
-  clickTag). Animation fidelity is 1:1 for *any* creative, including
-  mechanisms the importer can't parse; in exchange the internals are a
-  black box — position/size/click-through are editable, the creative's
-  DOM is not. `interactive` in the inspector decides whether pointer
-  gestures reach the embedded frame or the artboard click layer.
+Foreign HTML is flattened: scripts are stripped, the file renders in a
+hidden sandboxed iframe, and each visible node's computed bounds are
+measured to synthesize elements (`<img>`→image, text leaves→text,
+buttons/links→CTA, filled containers→shapes). JS-driven animation states
+collapse to their first frame — rebuild carousels/cubes as components
+after import.
 
 ## Persistence
 

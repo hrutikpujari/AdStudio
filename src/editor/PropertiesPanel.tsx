@@ -520,24 +520,6 @@ export function PropertiesPanel() {
         </div>
       )}
 
-      {el.type === 'nested-creative' && (
-        <div className="prop-group">
-          <h4>Nested Creative</h4>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-dim)', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={el.config.interactive}
-              onChange={(e) => setCfg({ interactive: e.target.checked })}
-            />
-            Pass pointer gestures to the creative
-          </label>
-          <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.4 }}>
-            Sealed import — the original scripts run inside a sandboxed frame.
-            When interactive is off, clicks land on the artboard click layer.
-          </div>
-        </div>
-      )}
-
       {el.type === 'spotlight' && (
         <div className="prop-group">
           <h4>Spotlight</h4>

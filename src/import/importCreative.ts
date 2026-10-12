@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { validateProject } from '../model/schema';
-import { createElement, createProject, uid } from '../model/defaults';
+import { createProject, uid } from '../model/defaults';
 import type {
   AdElement,
   AssetRef,
@@ -8,7 +8,6 @@ import type {
   CarouselElement,
   CreativeProject,
   ImageElement,
-  NestedCreativeElement,
   ShapeElement,
   SliceFlipElement,
   SlideConfig,
@@ -25,16 +24,11 @@ import type {
  *                visible node's real bounds are measured to synthesize
  *                flattened elements. JS-driven states collapse to the
  *                first frame; components do not survive as components.
- *  'sealed'    — the original document is kept intact (scripts and
- *                all), every local file is inlined as a data URL, and
- *                the result becomes a nested-creative element running
- *                in a sandboxed iframe. Animation fidelity is 1:1 but
- *                the internals are a black box.
  */
 
 export interface ImportResult {
   ok: boolean;
-  fidelity: 'full' | 'flattened' | 'sealed';
+  fidelity: 'full' | 'flattened';
   project?: CreativeProject;
   message: string;
 }
@@ -71,7 +65,7 @@ async function bytesToDataUrl(bytes: Uint8Array, mime: string): Promise<string> 
 
 /* ------------------------------ ZIP path ---------------------------- */
 
-export async function importZip(file: File, opts?: { sealed?: boolean }): Promise<ImportResult> {
+export async function importZip(file: File): Promise<ImportResult> {
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(file);
@@ -109,21 +103,20 @@ export async function importZip(file: File, opts?: { sealed?: boolean }): Promis
   const files = new Map<string, Uint8Array>();
   for (const [name, entry] of Object.entries(zip.files)) {
     if (entry.dir) continue;
-    if (IMG_EXT.test(name) || FONT_EXT.test(name) || (opts?.sealed && /\.(css|js)$/i.test(name))) {
+    if (IMG_EXT.test(name) || FONT_EXT.test(name)) {
       files.set(normPath(name), await entry.async('uint8array'));
     }
   }
-  const src: Source = {
+  return importHtml(html, {
     name: basename(htmlEntry.name).replace(/\.html?$/i, ''),
     getBytes: (p) => files.get(p) ?? null,
     candidates: () => [...files.keys()],
-  };
-  return opts?.sealed ? importNested(html, src) : importHtml(html, src);
+  });
 }
 
 /* ------------------------- folder / file path ----------------------- */
 
-export async function importFolderFiles(list: FileList, opts?: { sealed?: boolean }): Promise<ImportResult> {
+export async function importFolderFiles(list: FileList): Promise<ImportResult> {
   const files = new Map<string, File>();
   let htmlFile: File | null = null;
   let htmlScore = Infinity;
@@ -139,24 +132,22 @@ export async function importFolderFiles(list: FileList, opts?: { sealed?: boolea
     return { ok: false, fidelity: 'flattened', message: 'No .html file found in the folder' };
   }
   const html = await htmlFile.text();
-  const src: Source = {
+  return importHtml(html, {
     name: htmlFile.name.replace(/\.html?$/i, ''),
     getBytes: (p) => {
       const f = files.get(p);
       return f ? f.arrayBuffer().then((b) => new Uint8Array(b)) : null;
     },
     candidates: () => [...files.keys()],
-  };
-  return opts?.sealed ? importNested(html, src) : importHtml(html, src);
+  });
 }
 
-export async function importHtmlFile(file: File, opts?: { sealed?: boolean }): Promise<ImportResult> {
-  const src: Source = {
+export async function importHtmlFile(file: File): Promise<ImportResult> {
+  return importHtml(await file.text(), {
     name: file.name.replace(/\.html?$/i, ''),
     getBytes: () => null,
     candidates: () => [],
-  };
-  return opts?.sealed ? importNested(await file.text(), src) : importHtml(await file.text(), src);
+  });
 }
 
 /* --------------------------- html flatten --------------------------- */
@@ -768,132 +759,6 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
   } finally {
     iframe.remove();
   }
-}
-
-/* ------------------------- sealed (nested) import ------------------- */
-
-function b64Text(s: string): string {
-  const bytes = new TextEncoder().encode(s);
-  let bin = '';
-  const CH = 0x8000;
-  for (let i = 0; i < bytes.length; i += CH) {
-    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CH)) as number[]);
-  }
-  return btoa(bin);
-}
-
-/** Replace `"p"`, `'p'` and `(p)` occurrences of each candidate path —
- *  covers markup attributes, CSS url() and path literals inside
- *  <script> bodies (where creatives declare their image lists). */
-function rewritePathLiterals(body: string, map: Map<string, string>): string {
-  let out = body;
-  for (const [p, du] of map) {
-    for (const v of ['./' + p, p]) {
-      out = out.split(`"${v}"`).join(`"${du}"`);
-      out = out.split(`'${v}'`).join(`'${du}'`);
-      out = out.split(`(${v})`).join(`(${du})`);
-    }
-  }
-  return out;
-}
-
-/** Inline every local file reachable from the source into the document
- *  as a data URL — images/fonts directly; css/js files are decoded,
- *  their own path refs rewritten, then re-embedded as data: URLs. */
-async function buildNestedHtml(html: string, src: Source): Promise<string> {
-  const map = new Map<string, string>();
-  for (const p of src.candidates()) {
-    if (!IMG_EXT.test(p) && !FONT_EXT.test(p)) continue;
-    const bytes = await src.getBytes(p);
-    if (bytes) map.set(p, await bytesToDataUrl(bytes, MIME[ext(p)] ?? 'application/octet-stream'));
-  }
-  for (const p of src.candidates()) {
-    if (!/\.(css|js)$/i.test(p)) continue;
-    const bytes = await src.getBytes(p);
-    if (!bytes) continue;
-    const body = rewritePathLiterals(new TextDecoder().decode(bytes), map);
-    map.set(p, `data:${ext(p) === 'css' ? 'text/css' : 'text/javascript'};base64,${b64Text(body)}`);
-  }
-  return rewritePathLiterals(html, map);
-}
-
-/** Measure the creative container in a hidden scripts-disabled iframe.
- *  Runs against the fully-inlined document so relative assets resolve. */
-async function measureArtboard(html: string): Promise<{ w: number; h: number; bg?: string } | null> {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('script,noscript').forEach((s) => s.remove());
-  const iframe = document.createElement('iframe');
-  iframe.setAttribute('sandbox', 'allow-same-origin');
-  iframe.style.cssText =
-    'position:fixed;left:-10000px;top:0;width:1200px;height:900px;border:none;visibility:hidden;';
-  document.body.appendChild(iframe);
-  try {
-    const base = doc.createElement('base');
-    base.setAttribute('href', 'about:blank');
-    doc.head.prepend(base);
-    const sentinel = doc.createElement('meta');
-    sentinel.setAttribute('name', 'aps-import');
-    doc.head.appendChild(sentinel);
-    iframe.srcdoc = '<!doctype html>' + doc.documentElement.outerHTML;
-    const deadline = performance.now() + 4000;
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        const d = iframe.contentDocument;
-        if (d?.querySelector('meta[name="aps-import"]') && d.readyState === 'complete') return resolve();
-        if (performance.now() > deadline) return resolve();
-        setTimeout(check, 50);
-      };
-      iframe.onload = check;
-      check();
-    });
-    await new Promise((r) => setTimeout(r, 250));
-    const idoc = iframe.contentDocument;
-    if (!idoc) return null;
-    const container =
-      (idoc.querySelector('.ad-container') as HTMLElement | null) ??
-      (idoc.body.firstElementChild as HTMLElement | null) ??
-      idoc.body;
-    const r = container.getBoundingClientRect();
-    if (r.width < 40 || r.height < 40) return null;
-    const bg = idoc.defaultView!.getComputedStyle(container).backgroundColor;
-    return {
-      w: Math.round(r.width), h: Math.round(r.height),
-      bg: bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' ? bg : undefined,
-    };
-  } finally {
-    iframe.remove();
-  }
-}
-
-async function importNested(html: string, src: Source): Promise<ImportResult> {
-  const nestedHtml = await buildNestedHtml(html, src);
-
-  const srcDoc = new DOMParser().parseFromString(html, 'text/html');
-  const meta = srcDoc.querySelector('meta[name="ad.size"]')?.getAttribute('content') ?? '';
-  const mm = /width\s*=\s*(\d+)\s*,\s*height\s*=\s*(\d+)/i.exec(meta);
-
-  const dims = await measureArtboard(nestedHtml);
-  const W = dims?.w ?? (mm ? parseInt(mm[1]) : 300);
-  const H = dims?.h ?? (mm ? parseInt(mm[2]) : 250);
-
-  const project = createProject(src.name || 'Sealed creative', W, H);
-  if (dims?.bg) project.artboard.backgroundColor = rgbToHex(dims.bg) ?? dims.bg;
-  const ct = /clickTag\s*=\s*['"]([^'"]+)['"]/.exec(html);
-  if (ct) project.clickTag = ct[1];
-
-  const el = createElement('nested-creative', W, H) as NestedCreativeElement;
-  el.name = src.name || 'Original creative';
-  el.config.html = nestedHtml;
-  project.elements.push(el);
-
-  return {
-    ok: true,
-    fidelity: 'sealed',
-    project,
-    message:
-      `Imported "${src.name}" sealed (${W}×${H}) — original animation runs ` +
-      `inside a sandboxed frame. Move/resize it like any element; its internals aren't editable.`,
-  };
 }
 
 function rgbToHex(c: string): string | null {
