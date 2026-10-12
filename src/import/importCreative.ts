@@ -227,14 +227,21 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     el.setAttribute('style', await rewriteUrls(el.getAttribute('style') ?? ''));
   }
 
-  // render offscreen & measure — sandbox WITHOUT allow-scripts
+  // render offscreen & measure. allow-same-origin is required to read
+  // contentDocument; scripts remain disabled since tags were stripped
+  // and allow-scripts is not granted.
   const iframe = document.createElement('iframe');
-  iframe.setAttribute('sandbox', '');
+  iframe.setAttribute('sandbox', 'allow-same-origin');
   iframe.style.cssText =
     'position:fixed;left:-10000px;top:0;width:1200px;height:900px;border:none;visibility:hidden;pointer-events:none;';
   document.body.appendChild(iframe);
   try {
-    iframe.srcdoc = '<!doctype html><html>' + doc.documentElement.innerHTML + '</html>';
+    // <base> kills any leftover relative refs (they'd otherwise resolve
+    // against the editor's own origin and 404 or worse)
+    const base = doc.createElement('base');
+    base.setAttribute('href', 'about:blank');
+    doc.head.prepend(base);
+    iframe.srcdoc = '<!doctype html>' + doc.documentElement.outerHTML;
     await new Promise((r) => { iframe.onload = r; setTimeout(r, 1500); });
     await new Promise((r) => setTimeout(r, 350)); // let images/fonts settle
 
