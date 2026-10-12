@@ -7,6 +7,7 @@ import type {
   CubeElement,
   FanElement,
   ImageElement,
+  NestedCreativeElement,
   ShapeElement,
   SliceFlipElement,
   SlideConfig,
@@ -425,6 +426,23 @@ function genSpotlight(ctx: Ctx, el: SpotlightElement, z: number): ComponentOut {
   return { css, runtime: '', html: elShell(el, z, inner, 'pointer-events:none', ctx.scrubMs) };
 }
 
+/* Sealed original creative — runs its own scripts inside a sandboxed
+   iframe. `allow-scripts` without `allow-same-origin` = opaque origin:
+   the embedded JS executes but cannot reach the host document, the
+   clickTag, or the editor. Assets are already inlined as data URLs so
+   the frame needs no network access. */
+function genNestedCreative(ctx: Ctx, el: NestedCreativeElement, z: number): ComponentOut {
+  const iframe =
+    `<iframe class="nc-frame" sandbox="allow-scripts"` +
+    `${el.config.interactive ? '' : ' style="pointer-events:none"'}` +
+    ` srcdoc="${esc(el.config.html)}"></iframe>`;
+  return {
+    css: `#css-${el.id} .nc-frame{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}`,
+    runtime: '',
+    html: elShell(el, z, iframe, '', ctx.scrubMs),
+  };
+}
+
 /* ------------------------------ driver ------------------------------ */
 
 export function generateHtml(
@@ -461,6 +479,7 @@ export function generateHtml(
       case 'cube': { const r = genCube(ctx, el, z); componentCss.push(r.css); html = r.html; break; }
       case 'vertical-slider': { const r = genVerticalSlider(ctx, el, z); componentCss.push(r.css); if (r.runtime) runtimes.push(r.runtime); html = r.html; break; }
       case 'slice-flip': { const r = genSliceFlip(ctx, el, z); componentCss.push(r.css); if (r.runtime) runtimes.push(r.runtime); html = r.html; break; }
+      case 'nested-creative': { const r = genNestedCreative(ctx, el, z); componentCss.push(r.css); html = r.html; break; }
       case 'spotlight': { const r = genSpotlight(ctx, el, z); componentCss.push(r.css); html = r.html; break; }
     }
     bodyParts.push(html);

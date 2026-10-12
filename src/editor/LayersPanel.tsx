@@ -18,6 +18,7 @@ import {
   Unlock,
   Box,
   Columns3,
+  Package,
 } from 'lucide-react';
 import type { ElementType } from '../model/types';
 import { useEditor } from '../store/projectStore';
@@ -33,6 +34,7 @@ const TYPE_ICON: Record<ElementType, React.ReactNode> = {
   cube: <Move3d size={12} />,
   'vertical-slider': <Box size={12} />,
   'slice-flip': <Columns3 size={12} />,
+  'nested-creative': <Package size={12} />,
   spotlight: <Sun size={12} />,
 };
 

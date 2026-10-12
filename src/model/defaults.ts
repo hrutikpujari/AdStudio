@@ -165,6 +165,11 @@ export function createElement(
           autoplay: true,
         },
       };
+    case 'nested-creative':
+      return {
+        ...base('nested-creative', 'Nested Creative', 0, 0, artW, artH),
+        config: { html: '', interactive: false },
+      };
     case 'spotlight':
       return {
         ...base('spotlight', 'Spotlight', 0, 0, artW, artH),

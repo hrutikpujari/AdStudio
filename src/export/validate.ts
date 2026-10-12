@@ -74,6 +74,7 @@ export function validateForExport(project: CreativeProject): ValidationIssue[] {
       case 'fan-carousel':
       case 'card-stack':
       case 'vertical-slider':
+      case 'slice-flip':
         slideAssetIssues(el, el.config.slides, assetIds, issues);
         if (el.config.slides.length < 2) {
           issues.push({ level: 'warning', message: `"${el.name}" has fewer than 2 slides`, elementId: el.id });
@@ -87,6 +88,11 @@ export function validateForExport(project: CreativeProject): ValidationIssue[] {
         });
         if (el.config.faces.every((f) => !f)) {
           issues.push({ level: 'warning', message: `"${el.name}" has no face images assigned`, elementId: el.id });
+        }
+        break;
+      case 'nested-creative':
+        if (!el.config.html) {
+          issues.push({ level: 'error', message: `"${el.name}" has no embedded creative html`, elementId: el.id });
         }
         break;
     }

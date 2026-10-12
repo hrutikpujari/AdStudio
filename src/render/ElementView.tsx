@@ -5,6 +5,7 @@ import type {
   CardStackElement,
   CubeElement,
   FanElement,
+  NestedCreativeElement,
   SliceFlipElement,
   SlideConfig,
   SpotlightElement,
@@ -216,6 +217,43 @@ function SpotlightView({ el }: { el: SpotlightElement }) {
   );
 }
 
+/**
+ * Live render of a sealed creative on the canvas. `sandbox="allow-scripts"`
+ * (no allow-same-origin) gives the embedded document an opaque origin — its
+ * scripts run for animation but cannot read the editor DOM. pointer-events
+ * is off so canvas selection/drag still works over it.
+ */
+function NestedCreativeView({ el }: { el: NestedCreativeElement }) {
+  if (!el.config.html) {
+    return (
+      <div style={{
+        width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(120,120,120,0.15)', border: '1px dashed rgba(255,255,255,0.3)',
+        color: 'rgba(255,255,255,0.5)', fontSize: 10, fontFamily: 'monospace',
+      }}>
+        NESTED CREATIVE
+      </div>
+    );
+  }
+  return (
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+      <iframe
+        title={el.name}
+        sandbox="allow-scripts"
+        srcDoc={el.config.html}
+        style={{ width: '100%', height: '100%', border: 0, pointerEvents: 'none', display: 'block' }}
+      />
+      <div style={{
+        position: 'absolute', top: 3, right: 3, fontSize: 8, fontFamily: 'monospace',
+        color: 'rgba(255,255,255,0.55)', background: 'rgba(0,0,0,0.45)',
+        padding: '1px 4px', borderRadius: 3, pointerEvents: 'none',
+      }}>
+        sealed
+      </div>
+    </div>
+  );
+}
+
 export function ElementView({ el, assets }: { el: AdElement; assets: AssetRef[] }) {
   const inner: CSSProperties = { width: '100%', height: '100%', position: 'relative', overflow: 'hidden' };
 
@@ -275,6 +313,7 @@ export function ElementView({ el, assets }: { el: AdElement; assets: AssetRef[] 
     case 'cube': return <div style={inner}><CubeView el={el} assets={assets} /></div>;
     case 'vertical-slider': return <div style={inner}><VerticalSliderView el={el} assets={assets} /></div>;
     case 'slice-flip': return <div style={inner}><SliceFlipView el={el} assets={assets} /></div>;
+    case 'nested-creative': return <div style={inner}><NestedCreativeView el={el} /></div>;
     case 'spotlight': return <div style={inner}><SpotlightView el={el} /></div>;
   }
 }
