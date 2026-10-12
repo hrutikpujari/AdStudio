@@ -93,12 +93,20 @@ IIFE runtime — the same class-state technique as the reference creatives
 - **Folder** — pick a creative folder (`index.html` + `imgs/`); every
   image/font is imported as an asset.
 
-Foreign HTML is flattened: scripts are stripped, the file renders in a
-hidden sandboxed iframe, and each visible node's computed bounds are
-measured to synthesize elements (`<img>`→image, text leaves→text,
-buttons/links→CTA, filled containers→shapes). JS-driven animation states
-collapse to their first frame — rebuild carousels/cubes as components
-after import.
+Foreign HTML is measured **live**: every local file is inlined into the
+document as a data URL (including path literals inside `<script>`
+bodies), the file runs with its own scripts inside an opaque-origin
+sandboxed iframe (`sandbox="allow-scripts"` — it cannot reach the
+editor), and an injected probe walks the resulting DOM and postMessages
+serialized elements back. JS-built slides, applied state classes and
+final computed styles are all captured. Each node becomes an editable
+element (`<img>`→image, text leaves→text, buttons/links→CTA, filled
+containers→shapes); known animated structures are reconstructed as real
+components (staged-slide carousels → `carousel`, `.slices_container`
+creatives → `slice-flip`). If the probe times out or finds nothing, the
+importer falls back to CSS-only measurement (scripts stripped) —
+JS-driven motion still collapses to static elements for unrecognized
+patterns.
 
 ## Persistence
 

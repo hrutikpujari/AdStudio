@@ -1,0 +1,505 @@
+/* ------------------------------------------------------------------ *
+ *  apsProbe — measurement script injected into the import iframe.
+ *
+ *  This function is serialized with Function.prototype.toString() and
+ *  runs INSIDE the sandboxed measurement document, alongside the
+ *  creative's own scripts. It must therefore be fully self-contained:
+ *  no imports, no module-scope references, only plain JS + DOM APIs.
+ *  Type annotations are fine (stripped before toString()).
+ *
+ *  It walks the live DOM — after the creative's own JS has built
+ *  slides, applied classes and laid out the animation states — and
+ *  postMessages serialized elements back to the editor.
+ * ------------------------------------------------------------------ */
+
+export interface ProbeCfg {
+  /** raw creative source html (for script sniffing: setInterval, clickTag) */
+  html: string;
+  /** concatenated text of all <style> blocks + linked css files */
+  styleText: string;
+  /** normalized candidate path -> data URL (all local files, inlined) */
+  pathMap: Record<string, string>;
+}
+
+export interface ProbeResult {
+  w: number;
+  h: number;
+  bg?: string;
+  elements: Record<string, unknown>[];
+  /** unique asset src strings referenced by the emitted elements */
+  assetSrcs: string[];
+  clickTag?: string;
+  /** detector diagnostics — why a candidate slide group was rejected */
+  diag?: Record<string, unknown>;
+}
+
+export function apsProbe(cfg: ProbeCfg): ProbeResult {
+  const D = document;
+  const W = window;
+
+  const uid = (p = 'el') =>
+    `${p}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
+
+  const normPath = (p: string) => p.replace(/\\/g, '/').replace(/^\.?\//, '');
+  const basename = (p: string) => normPath(p).split('/').pop() ?? p;
+
+  function rgbToHex(c: string): string | null {
+    const m = /rgba?\(([^)]+)\)/.exec(c);
+    if (!m) return /^#[0-9a-f]{3,8}$/i.test(c) ? c : null;
+    const [r, g, b, a] = m[1].split(',').map((v) => parseFloat(v));
+    if (a === 0) return null;
+    const hex = (n: number) => Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, '0');
+    return `#${hex(r)}${hex(g)}${hex(b)}`;
+  }
+
+  const normDeg = (d: number) => {
+    let v = d % 360;
+    if (v > 180) v -= 360;
+    if (v < -180) v += 360;
+    return Math.round(v);
+  };
+
+  const ANIM = () => ({
+    preset: 'none', delay: 0, duration: 800,
+    easing: 'ease-out', iterations: 1, direction: 'normal',
+  });
+
+  const elements: Record<string, unknown>[] = [];
+  const assetSrcs: string[] = [];
+  const seenSrc = new Set<string>();
+  const diag: Record<string, unknown> = {};
+
+  /** Resolve an img/bg src or a script-declared path to a usable src
+   *  (data URL via pathMap for local files; http(s) passes through). */
+  const registerSrc = (ref: string): string | undefined => {
+    if (!ref) return undefined;
+    if (/^data:|^https?:/i.test(ref)) {
+      if (!seenSrc.has(ref)) { seenSrc.add(ref); assetSrcs.push(ref); }
+      return ref;
+    }
+    const clean = normPath(ref.split('?')[0].split('#')[0]);
+    if (!clean) return undefined;
+    let hit = cfg.pathMap[clean] ?? cfg.pathMap[basename(clean)];
+    if (!hit) {
+      const k = Object.keys(cfg.pathMap).find(
+        (c) => c === clean || c.endsWith('/' + clean) || basename(c) === clean,
+      );
+      if (k) hit = cfg.pathMap[k];
+    }
+    if (hit) {
+      if (!seenSrc.has(hit)) { seenSrc.add(hit); assetSrcs.push(hit); }
+      return hit;
+    }
+    return undefined;
+  };
+
+  const container =
+    (D.querySelector('.ad-container') as HTMLElement | null) ??
+    (D.body.firstElementChild as HTMLElement | null) ??
+    D.body;
+  const crect = container.getBoundingClientRect();
+  const cs = W.getComputedStyle(container);
+  const bgRaw = cs.backgroundColor;
+  const bg =
+    bgRaw && bgRaw !== 'rgba(0, 0, 0, 0)' && bgRaw !== 'transparent'
+      ? (rgbToHex(bgRaw) ?? bgRaw)
+      : undefined;
+
+  /* a container can be authored height:100% of an auto-height
+     positioned ancestor — CSS resolves it to 0 and the box collapses
+     even though its image content still renders. Fall back to the
+     innermost non-collapsed descendant's rect. */
+  const visualRect = (el: HTMLElement): DOMRect => {
+    const r = el.getBoundingClientRect();
+    if (r.width >= 10 && r.height >= 10) return r;
+    const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+    if (img) {
+      const ir = img.getBoundingClientRect();
+      if (ir.width >= 10 && ir.height >= 10) return ir;
+    }
+    let child = el.firstElementChild as HTMLElement | null;
+    while (child) {
+      const cr = child.getBoundingClientRect();
+      if (cr.width >= 10 && cr.height >= 10) return cr;
+      child = child.firstElementChild as HTMLElement | null;
+    }
+    return r;
+  };
+
+  // staged-slides carousel: 3+ uniform siblings, each holding one image.
+  // On live DOM the JS-assigned state classes are present, so the
+  // currently-"center" slide is measured directly.
+  const detectSlideGroup = (node: Element): Record<string, unknown> | null => {
+    const kids = Array.from(node.children) as HTMLElement[];
+    if (kids.length < 3) return null;
+
+    const saved = kids.map((k) => k.getAttribute('style'));
+    kids.forEach((k) => {
+      k.style.setProperty('display', 'block', 'important');
+      k.style.setProperty('visibility', 'visible', 'important');
+      k.style.setProperty('opacity', '1', 'important');
+      // inline !important transform:none overrides class-driven state
+      // transforms — this measures each kid's natural slide size
+      k.style.setProperty('transform', 'none', 'important');
+    });
+    const natural = kids.map((k) => visualRect(k));
+    kids.forEach((k, i) => {
+      if (saved[i] !== null) k.setAttribute('style', saved[i]!);
+      else k.removeAttribute('style');
+    });
+    // live rects (class transforms applied) — used for the box below
+    const rects = kids.map((k) => visualRect(k));
+    const filters = kids.map((k) => W.getComputedStyle(k).filter);
+
+    // "same kind of slide" = same natural (un-transformed) size;
+    // state-dependent scale differences must not count
+    const valid = natural.filter((r) => r.width >= 10 && r.height >= 10);
+    if (valid.length < 3) {
+      diag.lastBail = `valid<3 kids=${kids.length} cls=${String(node.getAttribute('class')).slice(0, 40)} rects=${natural.map((r) => `${Math.round(r.width)}x${Math.round(r.height)}`).join(',')}`;
+      return null;
+    }
+    const avgW = valid.reduce((s, r) => s + r.width, 0) / valid.length;
+    const avgH = valid.reduce((s, r) => s + r.height, 0) / valid.length;
+    const uniform = valid.every((r) =>
+      Math.abs(r.width - avgW) / avgW < 0.4 && Math.abs(r.height - avgH) / avgH < 0.4);
+    if (!uniform) {
+      diag.lastBail = `nonuniform kids=${kids.length} cls=${String(node.getAttribute('class')).slice(0, 40)} natural=${natural.map((r) => `${Math.round(r.width)}x${Math.round(r.height)}`).join(',')}`;
+      return null;
+    }
+
+    const imgs = kids.map((k) => (k.tagName === 'IMG' ? k : k.querySelector('img')));
+    if (imgs.filter(Boolean).length < Math.max(3, kids.length - 1)) {
+      diag.lastBail = `imgs<${Math.max(3, kids.length - 1)} kids=${kids.length} got=${imgs.filter(Boolean).length}`;
+      return null;
+    }
+
+    const slides = kids.map((_, i) => ({
+      id: uid('sl'),
+      assetSrc: registerSrc(imgs[i]?.getAttribute('src') ?? ''),
+      title: '', subtitle: '',
+    }));
+    if (slides.filter((s) => s.assetSrc).length < 2) {
+      diag.lastBail = `slideSrcs<2 kids=${kids.length}`;
+      return null;
+    }
+
+    const common = kids.length
+      ? [...new Set(Array.from(kids[0].classList))].filter((c) => kids.every((k) => k.classList.contains(c)))
+      : [];
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // bounding box: on live DOM a JS-assigned "shown" class is usually
+    // already on one slide — find the kid whose rendered area is the
+    // largest and inside the container; fall back to modifier probing
+    let box = { left: 0, top: 0, width: 0, height: 0 };
+    let bestArea = 0;
+    kids.forEach((_k, i) => {
+      const r = rects[i];
+      const area = r.width * r.height;
+      const inside = r.left < crect.right && r.right > crect.left && r.top < crect.bottom && r.bottom > crect.top;
+      if (area > bestArea && inside) {
+        bestArea = area;
+        box = { left: r.left, top: r.top, width: r.width, height: r.height };
+      }
+    });
+    if (bestArea === 0) {
+      const modifiers = new Set<string>();
+      for (const c of common) {
+        const re = new RegExp(`\\.${esc(c)}\\.([a-zA-Z0-9_-]+)`, 'g');
+        let mm: RegExpExecArray | null;
+        while ((mm = re.exec(cfg.styleText))) modifiers.add(mm[1]);
+      }
+      const probe = kids[0];
+      const probeSaved = probe.getAttribute('class');
+      for (const mod of modifiers) {
+        probe.classList.add(mod);
+        const pr = probe.getBoundingClientRect();
+        const area = pr.width * pr.height;
+        if (area > bestArea) {
+          bestArea = area;
+          box = { left: pr.left, top: pr.top, width: pr.width, height: pr.height };
+        }
+        probe.classList.remove(mod);
+      }
+      if (probeSaved !== null) probe.setAttribute('class', probeSaved);
+      else probe.removeAttribute('class');
+    }
+    if (bestArea === 0) {
+      const left = Math.min(...valid.map((r) => r.left));
+      const top = Math.min(...valid.map((r) => r.top));
+      const right = Math.max(...valid.map((r) => r.left + r.width));
+      const bottom = Math.max(...valid.map((r) => r.top + r.height));
+      const plausible = left < crect.right && right > crect.left && top < crect.bottom && bottom > crect.top;
+      box = plausible
+        ? { left, top, width: right - left, height: bottom - top }
+        : { left: crect.left + crect.width * 0.15, top: crect.top + crect.height * 0.3, width: crect.width * 0.7, height: crect.height * 0.45 };
+    }
+
+    const stageLike = common.some((c) =>
+      new RegExp(`\\.${esc(c)}\\.[a-zA-Z0-9_-]+[^{]*\\{[^}]*filter\\s*:\\s*brightness`, 'i').test(cfg.styleText));
+    const variant = stageLike || filters.some((f) => f && f !== 'none') ? 'stage' : 'coverflow';
+    const intervalMs = parseInt(/setInterval\([^,]+,\s*(\d+)\s*\)/.exec(cfg.html)?.[1] ?? '') || 2500;
+    let transitionMs = 600;
+    for (const c of common) {
+      const re = new RegExp(`\\.${esc(c)}[^{]*\\{[^}]*transition:[^;]*?(\\d*\\.?\\d+)s`, 'i');
+      const m = re.exec(cfg.styleText);
+      if (m) { transitionMs = Math.round(parseFloat(m[1]) * 1000); break; }
+    }
+
+    return {
+      id: uid(), type: 'carousel', name: 'Carousel',
+      x: Math.round(box.left - crect.left), y: Math.round(box.top - crect.top),
+      width: Math.round(box.width), height: Math.round(box.height),
+      rotation: 0, opacity: 1, visible: true, locked: false,
+      animation: ANIM(),
+      config: {
+        slides, autoplay: true, intervalMs, transitionMs,
+        pauseOnHover: /clearInterval/.test(cfg.html) && /mouseenter|mouseover/.test(cfg.html),
+        variant,
+      },
+    };
+  };
+
+  const consumed = new Set<Element>();
+  const markConsumed = (node: Element) => {
+    consumed.add(node);
+    node.querySelectorAll('*').forEach((n) => consumed.add(n));
+  };
+
+  // JS-built slice-flip creatives: detection keys on container markup
+  // plus a script array of image paths.
+  const detectSliceFlip = (): Record<string, unknown> | null => {
+    const sliceHost = D.querySelector(
+      '[class*="slices_container"],[class*="slice-inner"],[id*="slice" i]',
+    );
+    if (!sliceHost || !/rotateY\s*\(/.test(cfg.html)) return null;
+
+    let paths: string[] = [];
+    for (const m of cfg.html.matchAll(/=\s*\[((?:[^\]])*)\]/g)) {
+      const ps = [...m[1].matchAll(/['"]([^'"]+\.(?:png|jpe?g|gif|webp|svg))['"]/gi)]
+        .map((x) => x[1]);
+      if (ps.length >= 3) { paths = ps; break; }
+    }
+    if (paths.length < 3) return null;
+
+    const slides = paths.slice(0, 20).map((p) => ({
+      id: uid('sl'),
+      assetSrc: registerSrc(p),
+      title: '', subtitle: '',
+    }));
+    if (slides.filter((s) => s.assetSrc).length < 2) return null;
+
+    const host = (sliceHost.parentElement ?? sliceHost) as HTMLElement;
+    const r = host.getBoundingClientRect();
+    const cfgNum = (names: string[], d: number) => {
+      for (const n of names) {
+        const m = new RegExp(`${n}\\s*=\\s*(\\d+)`, 'i').exec(cfg.html);
+        if (m) return parseInt(m[1]);
+      }
+      return d;
+    };
+
+    markConsumed(host);
+    return {
+      id: uid(), type: 'slice-flip', name: 'Slice Flip',
+      x: Math.round(r.left - crect.left), y: Math.round(r.top - crect.top),
+      width: Math.max(10, Math.round(r.width)), height: Math.max(10, Math.round(r.height)),
+      rotation: 0, opacity: 1, visible: true, locked: false,
+      animation: ANIM(),
+      config: {
+        slides,
+        sliceCount: Math.min(20, Math.max(2, cfgNum(['SLICE_COUNT', 'sliceCount', 'NUM_SLICES'], 8))),
+        flipMs: Math.min(10000, Math.max(100, cfgNum(['DURATION', 'flipMs', 'flipDuration'], 1200))),
+        staggerMs: Math.min(2000, Math.max(0, cfgNum(['STAGGER', 'staggerMs'], 100))),
+        holdMs: Math.min(60000, Math.max(200, cfgNum(['HOLD', 'holdMs', 'autoplayIntervalMs'], 3000))),
+        autoplay: true,
+      },
+    };
+  };
+
+  const walk = (node: Element) => {
+    if (elements.length > 150) return;
+    if (consumed.has(node)) return;
+    if (node.classList.contains('clickLayer') || node.id === 'clickLayer') return;
+
+    const style = W.getComputedStyle(node);
+    const nodeStyle = (node as HTMLElement).style;
+    const initiallyHidden =
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      parseFloat(style.opacity) === 0;
+    const savedStyle = node.getAttribute('style');
+    if (initiallyHidden) {
+      nodeStyle.setProperty('display', 'block', 'important');
+      nodeStyle.setProperty('visibility', 'visible', 'important');
+      nodeStyle.setProperty('opacity', '1', 'important');
+    }
+
+    try {
+      const r = node.getBoundingClientRect();
+      if (r.width >= 4 && r.height >= 4) {
+        const tm = /matrix\(([^)]+)\)/.exec(style.transform);
+        let rotation = 0;
+        let x = Math.round(r.left - crect.left);
+        let y = Math.round(r.top - crect.top);
+        let w = Math.round(r.width);
+        let h = Math.round(r.height);
+        if (tm) {
+          const [a, b, c, d] = tm[1].split(',').map(Number);
+          const angle = normDeg(Math.atan2(b, a) * 180 / Math.PI);
+          if (Math.abs(angle) > 1) {
+            const prevT = nodeStyle.getPropertyValue('transform');
+            const prevTP = nodeStyle.getPropertyPriority('transform');
+            nodeStyle.setProperty('transform', 'none', 'important');
+            const r2 = node.getBoundingClientRect();
+            nodeStyle.setProperty('transform', prevT, prevTP);
+            w = Math.round(r2.width * (Math.hypot(a, b) || 1));
+            h = Math.round(r2.height * (Math.hypot(c, d) || 1));
+            rotation = angle;
+            x = Math.round(r.left + r.width / 2 - crect.left - w / 2);
+            y = Math.round(r.top + r.height / 2 - crect.top - h / 2);
+          }
+        }
+
+        const offCanvas =
+          x + w <= 0 || y + h <= 0 || x >= crect.width || y >= crect.height;
+        const base = {
+          x, y, width: w, height: h, rotation,
+          opacity: initiallyHidden ? 1 : Math.min(1, Math.max(0, parseFloat(style.opacity) || 1)),
+          visible: !initiallyHidden && !offCanvas,
+          locked: false,
+          animation: ANIM(),
+        };
+
+        const tag = node.tagName;
+
+        if (tag === 'IMG') {
+          const srcAttr = registerSrc(node.getAttribute('src') ?? '');
+          if (srcAttr) {
+            elements.push({
+              id: uid(), type: 'image', name: node.getAttribute('alt') || 'Image',
+              ...base,
+              assetSrc: srcAttr,
+              fit: style.objectFit === 'cover' || style.objectFit === 'contain' ? style.objectFit : 'fill',
+              borderRadius: parseFloat(style.borderRadius) || 0,
+            });
+            return;
+          }
+        }
+
+        const bgImg = style.backgroundImage;
+        const bgUrl = /url\(["']?(.*?)["']?\)/.exec(bgImg)?.[1] ?? '';
+        if (bgUrl) {
+          const srcAttr = registerSrc(bgUrl);
+          if (srcAttr) {
+            elements.push({
+              id: uid(), type: 'image', name: 'Background image',
+              ...base,
+              assetSrc: srcAttr,
+              fit: style.backgroundSize === 'contain' ? 'contain' : 'cover',
+              borderRadius: parseFloat(style.borderRadius) || 0,
+            });
+            for (const child of Array.from(node.children)) walk(child);
+            return;
+          }
+        }
+        const gradientFill = /gradient\(/.test(bgImg)
+          ? (rgbToHex(/#[0-9a-f]{3,8}|rgba?\([^)]*\)/i.exec(bgImg)?.[0] ?? '') ?? null)
+          : null;
+
+        const ownText = [...node.childNodes]
+          .filter((n) => n.nodeType === 3)
+          .map((n) => n.textContent ?? '')
+          .join(' ').trim();
+        if (ownText) {
+          const isBtn = tag === 'BUTTON' || tag === 'A' || style.cursor === 'pointer';
+          const fontWeight = Math.min(900, Math.max(100,
+            Math.round((parseFloat(style.fontWeight) || 400) / 100) * 100));
+          if (isBtn) {
+            const href = tag === 'A' ? node.getAttribute('href') ?? '' : '';
+            elements.push({
+              id: uid(), type: 'button', name: ownText.slice(0, 24) || 'CTA',
+              ...base,
+              label: ownText,
+              fontFamily: style.fontFamily || 'Arial, sans-serif',
+              fontSize: Math.round(parseFloat(style.fontSize) || 12),
+              fontWeight,
+              color: rgbToHex(style.color) ?? '#ffffff',
+              background: rgbToHex(style.backgroundColor) ?? '#111111',
+              borderRadius: parseFloat(style.borderRadius) || 0,
+              url: /^https?:/i.test(href) ? href : '',
+            });
+            return;
+          }
+          elements.push({
+            id: uid(), type: 'text',
+            name: ownText.slice(0, 24) || 'Text',
+            ...base,
+            content: ownText,
+            fontFamily: style.fontFamily || 'Arial, sans-serif',
+            fontSize: Math.round(parseFloat(style.fontSize) || 12),
+            fontWeight,
+            lineHeight: style.lineHeight === 'normal' ? 1.2 : Math.round((parseFloat(style.lineHeight) || 14) / (parseFloat(style.fontSize) || 12) * 100) / 100,
+            letterSpacing: style.letterSpacing === 'normal' ? 0 : parseFloat(style.letterSpacing) || 0,
+            color: rgbToHex(style.color) ?? style.color,
+            textAlign: (style.textAlign === 'center' || style.textAlign === 'right') ? style.textAlign : 'left',
+            direction: style.direction === 'rtl' ? 'rtl' : 'ltr',
+            background: 'transparent',
+          });
+          return;
+        }
+
+        const bgCol = style.backgroundColor;
+        const hasBg =
+          (bgCol && bgCol !== 'rgba(0, 0, 0, 0)' && bgCol !== 'transparent') || gradientFill;
+        const hasBorder = parseFloat(style.borderWidth) > 0 && style.borderStyle !== 'none';
+        const fill =
+          rgbToHex(bgCol) ?? gradientFill ??
+          (hasBorder ? 'transparent' : '');
+        if ((hasBg || hasBorder) && node !== container) {
+          const el = {
+            id: uid(), type: 'shape', name: node.children.length ? 'Panel' : 'Shape',
+            ...base,
+            shape: parseFloat(style.borderRadius) > Math.min(w, h) / 2.5 ? 'ellipse' : 'rect',
+            fill: fill || 'transparent',
+            borderColor: rgbToHex(style.borderColor) ?? 'transparent',
+            borderWidth: hasBorder ? Math.round(parseFloat(style.borderWidth)) : 0,
+            borderRadius: parseFloat(style.borderRadius) || 0,
+          };
+          if (w * h < crect.width * crect.height * 0.98 || !node.children.length) {
+            elements.push(el);
+          }
+        }
+      }
+
+      const slideGroup = detectSlideGroup(node);
+      if (slideGroup) {
+        elements.push(slideGroup);
+      } else {
+        for (const child of Array.from(node.children)) walk(child);
+      }
+    } finally {
+      if (initiallyHidden) {
+        if (savedStyle !== null) node.setAttribute('style', savedStyle);
+        else node.removeAttribute('style');
+      }
+    }
+  };
+
+  const sliceFlip = detectSliceFlip();
+  if (sliceFlip) elements.push(sliceFlip);
+
+  for (const child of Array.from(container.children)) walk(child);
+
+  const ct = /clickTag\s*=\s*['"]([^'"]+)['"]/.exec(cfg.html)?.[1];
+
+  return {
+    w: Math.round(crect.width),
+    h: Math.round(crect.height),
+    bg,
+    elements,
+    assetSrcs,
+    clickTag: ct,
+    diag,
+  };
+}

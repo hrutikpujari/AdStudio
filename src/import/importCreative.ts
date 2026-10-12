@@ -1,6 +1,8 @@
 import JSZip from 'jszip';
 import { validateProject } from '../model/schema';
 import { createProject, uid } from '../model/defaults';
+import { apsProbe } from './probeScript';
+import type { ProbeResult } from './probeScript';
 import type {
   AdElement,
   AssetRef,
@@ -61,6 +63,54 @@ async function bytesToDataUrl(bytes: Uint8Array, mime: string): Promise<string> 
     bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CH)) as number[]);
   }
   return `data:${mime};base64,${btoa(bin)}`;
+}
+
+function b64Text(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let bin = '';
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CH)) as number[]);
+  }
+  return btoa(bin);
+}
+
+/** Replace `"p"`, `'p'` and `(p)` occurrences of each candidate path —
+ *  covers markup attributes, CSS url() and path literals inside
+ *  <script> bodies (where creatives declare their image lists). */
+function rewritePathLiterals(body: string, map: Map<string, string>): string {
+  let out = body;
+  for (const [p, du] of map) {
+    for (const v of ['./' + p, p]) {
+      out = out.split(`"${v}"`).join(`"${du}"`);
+      out = out.split(`'${v}'`).join(`'${du}'`);
+      out = out.split(`(${v})`).join(`(${du})`);
+    }
+  }
+  return out;
+}
+
+/** Inline every local file reachable from the source as a data URL:
+ *  images/fonts directly; css/js are decoded, their own path refs
+ *  rewritten, then re-embedded. Returns the path->dataURL map and the
+ *  combined css text (needed by the probe's style sniffing). */
+async function inlineAssets(src: Source): Promise<{ map: Map<string, string>; cssText: string }> {
+  const map = new Map<string, string>();
+  const cssParts: string[] = [];
+  for (const p of src.candidates()) {
+    if (!IMG_EXT.test(p) && !FONT_EXT.test(p)) continue;
+    const bytes = await src.getBytes(p);
+    if (bytes) map.set(p, await bytesToDataUrl(bytes, MIME[ext(p)] ?? 'application/octet-stream'));
+  }
+  for (const p of src.candidates()) {
+    if (!/\.(css|js)$/i.test(p)) continue;
+    const bytes = await src.getBytes(p);
+    if (!bytes) continue;
+    const body = rewritePathLiterals(new TextDecoder().decode(bytes), map);
+    if (/\.css$/i.test(p)) cssParts.push(body);
+    map.set(p, `data:${/\.css$/i.test(p) ? 'text/css' : 'text/javascript'};base64,${b64Text(body)}`);
+  }
+  return { map, cssText: cssParts.join('\n') };
 }
 
 /* ------------------------------ ZIP path ---------------------------- */
@@ -159,6 +209,71 @@ interface Source {
   candidates: () => string[];
 }
 
+/**
+ * Live-DOM measurement: every local file is inlined into the document
+ * (including path literals inside <script> bodies), our probe script is
+ * appended, and the document runs in an opaque-origin sandboxed iframe
+ * (`allow-scripts` only — the creative's JS executes and builds its real
+ * DOM, but cannot reach the editor). The probe walks the live DOM and
+ * postMessages serialized elements back. Returns null on timeout.
+ */
+async function runProbe(html: string, src: Source): Promise<ProbeResult | null> {
+  const { map, cssText } = await inlineAssets(src);
+  const inlined = rewritePathLiterals(html, map);
+  const doc = new DOMParser().parseFromString(inlined, 'text/html');
+
+  const base = doc.createElement('base');
+  base.setAttribute('href', 'about:blank');
+  doc.head.prepend(base);
+  const freeze = doc.createElement('style');
+  freeze.textContent = '*,*::before,*::after{animation:none!important;transition:none!important}';
+  doc.head.appendChild(freeze);
+
+  const styleText = [
+    ...Array.from(doc.querySelectorAll('style')).map((s) => s.textContent ?? ''),
+    cssText,
+  ].join('\n');
+  const cfgJson = JSON.stringify({
+    html, styleText, pathMap: Object.fromEntries(map),
+  }).replace(/<\//g, '<\\/');
+
+  const probe = doc.createElement('script');
+  probe.textContent =
+    `var APS_CFG=${cfgJson};\n` +
+    `var __apsRun=function(){try{var r=(${apsProbe.toString()})(APS_CFG);` +
+    `parent.postMessage({__aps:'result',r:r},'*');}` +
+    `catch(e){parent.postMessage({__aps:'result',err:String(e&&e.message||e)},'*');}};\n` +
+    `setTimeout(__apsRun,1200);setTimeout(__apsRun,2600);`;
+  doc.body.appendChild(probe);
+
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('sandbox', 'allow-scripts');
+  iframe.style.cssText =
+    'position:fixed;left:-10000px;top:0;width:1200px;height:900px;border:none;visibility:hidden;pointer-events:none;';
+  document.body.appendChild(iframe);
+  try {
+    let last: ProbeResult | null = null;
+    let count = 0;
+    const onMsg = (e: MessageEvent) => {
+      if (e.source === iframe.contentWindow && e.data?.__aps === 'result' && e.data.r) {
+        last = e.data.r as ProbeResult;
+        count++;
+      }
+    };
+    window.addEventListener('message', onMsg);
+    iframe.srcdoc = '<!doctype html>' + doc.documentElement.outerHTML;
+    // take the latest snapshot: settle early if both arrived
+    const deadline = performance.now() + 4800;
+    while (performance.now() < deadline && count < 2) {
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    window.removeEventListener('message', onMsg);
+    return last;
+  } finally {
+    iframe.remove();
+  }
+}
+
 async function importHtml(html: string, src: Source): Promise<ImportResult> {
   const doc = new DOMParser().parseFromString(html, 'text/html');
 
@@ -228,6 +343,63 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
   }
   for (const el of Array.from(doc.querySelectorAll('[style]'))) {
     el.setAttribute('style', await rewriteUrls(el.getAttribute('style') ?? ''));
+  }
+
+  // map a src string (data URL / http) emitted by the probe to an
+  // asset id, registering it if unseen
+  const srcToAssetId = (s: string | undefined): string | undefined => {
+    if (!s) return undefined;
+    if (dataUrlToAsset.has(s)) return dataUrlToAsset.get(s);
+    const a: AssetRef = {
+      id: uid('as'),
+      name: basename(s.split('?')[0].split('#')[0]) || 'asset',
+      kind: /^data:font\//.test(s) ? 'font' : 'image',
+      mimeType: s.startsWith('data:') ? (s.slice(5, s.indexOf(';')) || 'image/png') : 'image/png',
+      src: s,
+    };
+    assets.push(a);
+    dataUrlToAsset.set(s, a.id);
+    return a.id;
+  };
+  const mapProbeElement = (e: Record<string, unknown>): AdElement => {
+    const { assetSrc, ...rest } = e as Record<string, unknown> & { assetSrc?: string };
+    const el = rest as unknown as AdElement;
+    if (assetSrc) (el as ImageElement).assetId = srcToAssetId(assetSrc);
+    const cfg = (el as { config?: { slides?: { assetSrc?: string; assetId?: string }[] } }).config;
+    if (cfg?.slides) {
+      cfg.slides = cfg.slides.map((s) => {
+        const { assetSrc: ss, ...sr } = s;
+        return { ...sr, assetId: srcToAssetId(ss) };
+      });
+    }
+    return el;
+  };
+
+  // primary measurement: run the creative's OWN scripts inside an
+  // opaque-origin sandbox and measure the live DOM it builds. Captures
+  // JS-created nodes and real class states that the CSS-only fallback
+  // below can never see.
+  const probeRes = await runProbe(html, src);
+  if (probeRes && probeRes.elements.length) {
+    if (probeRes.w >= 40 && probeRes.h >= 40) {
+      project.artboard.width = probeRes.w;
+      project.artboard.height = probeRes.h;
+    }
+    if (probeRes.bg) project.artboard.backgroundColor = probeRes.bg;
+    project.elements = probeRes.elements.map(mapProbeElement);
+    project.assets = assets;
+    const ct = probeRes.clickTag ?? /var\s+clickTag\s*=\s*["']([^"']+)/.exec(html)?.[1];
+    if (ct && /^https?:/i.test(ct)) project.clickTag = ct;
+    const comps = project.elements.filter(
+      (e) => e.type !== 'image' && e.type !== 'text' && e.type !== 'button' && e.type !== 'shape',
+    ).length;
+    return {
+      ok: true, fidelity: 'flattened', project,
+      message:
+        `Imported ${project.elements.length} element(s) + ${assets.length} asset(s)` +
+        (comps ? `, including ${comps} animated component(s) reconstructed` : '') +
+        ` — measured live with the creative's own scripts.`,
+    };
   }
 
   // render offscreen & measure. allow-same-origin is required to read
