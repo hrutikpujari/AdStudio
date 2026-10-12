@@ -241,6 +241,11 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     const base = doc.createElement('base');
     base.setAttribute('href', 'about:blank');
     doc.head.prepend(base);
+    // freeze animations/transitions so every node is measured at its
+    // authored base state (deterministic frame-1, not a random offset)
+    const freeze = doc.createElement('style');
+    freeze.textContent = '*,*::before,*::after{animation:none!important;transition:none!important}';
+    doc.head.appendChild(freeze);
     iframe.srcdoc = '<!doctype html>' + doc.documentElement.outerHTML;
     await new Promise((r) => { iframe.onload = r; setTimeout(r, 1500); });
     await new Promise((r) => setTimeout(r, 350)); // let images/fonts settle
@@ -265,161 +270,221 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     }
 
     const elements: AdElement[] = [];
+    const iwin = idoc.defaultView!;
+    const ANIM = () => ({
+      preset: 'none' as const, delay: 0, duration: 800,
+      easing: 'ease-out' as const, iterations: 1, direction: 'normal' as const,
+    });
 
-    const push = (el: AdElement) => { elements.push(el); };
+    const normDeg = (d: number) => {
+      let v = d % 360;
+      if (v > 180) v -= 360;
+      if (v < -180) v += 360;
+      return Math.round(v);
+    };
 
     const walk = (node: Element) => {
-      const style = idoc.defaultView!.getComputedStyle(node);
-      if (style.display === 'none' || style.visibility === 'hidden') return;
-      if (parseFloat(style.opacity) === 0) return;
+      if (elements.length > 150) return;
       if (node.classList.contains('clickLayer') || node.id === 'clickLayer') return;
 
-      const r = node.getBoundingClientRect();
-      const x = Math.round(r.left - crect.left);
-      const y = Math.round(r.top - crect.top);
-      const w = Math.round(r.width);
-      const h = Math.round(r.height);
-      if (w < 4 || h < 4) return;
+      const style = iwin.getComputedStyle(node);
+      const nodeStyle = (node as HTMLElement).style;
+      // staged/hidden nodes (off-frame carousel slides, fade-in targets):
+      // transiently reveal them so they still land on the artboard,
+      // marked hidden so the Layers panel can toggle them.
+      const initiallyHidden =
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        parseFloat(style.opacity) === 0;
+      const savedStyle = node.getAttribute('style');
+      if (initiallyHidden) {
+        nodeStyle.setProperty('display', 'block', 'important');
+        nodeStyle.setProperty('visibility', 'visible', 'important');
+        nodeStyle.setProperty('opacity', '1', 'important');
+      }
 
-      const tag = node.tagName;
+      try {
+        const r = node.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4) return;
 
-      if (tag === 'IMG') {
-        const srcAttr = node.getAttribute('src') ?? '';
-        const assetId = srcAttr.startsWith('data:') ? dataUrlToAsset.get(srcAttr) : undefined;
-        // register remote/data images as assets too
-        let aid = assetId;
-        if (!aid && srcAttr.startsWith('data:')) {
-          const a: AssetRef = { id: uid('as'), name: basename(srcAttr.slice(5, 40)) || 'image', kind: 'image', mimeType: srcAttr.slice(5, srcAttr.indexOf(';')) || 'image/png', src: srcAttr };
-          assets.push(a);
-          dataUrlToAsset.set(srcAttr, a.id);
-          aid = a.id;
-        }
-        if (aid || srcAttr) {
-          const el: ImageElement = {
-            id: uid(), type: 'image', name: node.getAttribute('alt') || 'Image',
-            x, y, width: w, height: h, rotation: 0, opacity: 1,
-            visible: true, locked: false,
-            animation: { preset: 'none', delay: 0, duration: 800, easing: 'ease-out', iterations: 1, direction: 'normal' },
-            assetId: aid,
-            fit: style.objectFit === 'cover' || style.objectFit === 'contain' || style.objectFit === 'fill' ? style.objectFit : 'contain',
-            borderRadius: parseFloat(style.borderRadius) || 0,
-          };
-          if (srcAttr && !aid && /^https?:/i.test(srcAttr)) {
-            const a: AssetRef = { id: uid('as'), name: basename(srcAttr.split('?')[0]) || 'remote-image', kind: 'image', mimeType: 'image/png', src: srcAttr };
-            assets.push(a);
-            el.assetId = a.id;
+        // recover rotation: measure the un-transformed box, then
+        // center it on the transformed bounding box
+        const tm = /matrix\(([^)]+)\)/.exec(style.transform);
+        let rotation = 0;
+        let x = Math.round(r.left - crect.left);
+        let y = Math.round(r.top - crect.top);
+        let w = Math.round(r.width);
+        let h = Math.round(r.height);
+        if (tm) {
+          const [a, b, c, d] = tm[1].split(',').map(Number);
+          const angle = normDeg(Math.atan2(b, a) * 180 / Math.PI);
+          if (Math.abs(angle) > 1) {
+            const prevT = nodeStyle.getPropertyValue('transform');
+            const prevTP = nodeStyle.getPropertyPriority('transform');
+            nodeStyle.setProperty('transform', 'none', 'important');
+            const r2 = node.getBoundingClientRect();
+            nodeStyle.setProperty('transform', prevT, prevTP);
+            w = Math.round(r2.width * (Math.hypot(a, b) || 1));
+            h = Math.round(r2.height * (Math.hypot(c, d) || 1));
+            rotation = angle;
+            x = Math.round(r.left + r.width / 2 - crect.left - w / 2);
+            y = Math.round(r.top + r.height / 2 - crect.top - h / 2);
           }
-          if (el.assetId) { push(el); return; }
         }
-      }
 
-      // background-image elements → image element
-      const bg = style.backgroundImage;
-      if (bg && bg !== 'none' && /url\(/.test(bg)) {
-        const u = /url\(["']?(.*?)["']?\)/.exec(bg)?.[1] ?? '';
-        let aid = dataUrlToAsset.get(u);
-        if (!aid && u.startsWith('data:')) {
-          const a: AssetRef = { id: uid('as'), name: 'bg-image', kind: 'image', mimeType: u.slice(5, u.indexOf(';')) || 'image/png', src: u };
-          assets.push(a); dataUrlToAsset.set(u, a.id); aid = a.id;
-        }
-        if (aid) {
-          const el: ImageElement = {
-            id: uid(), type: 'image', name: 'Background image',
-            x, y, width: w, height: h, rotation: 0, opacity: 1,
-            visible: true, locked: false,
-            animation: { preset: 'none', delay: 0, duration: 800, easing: 'ease-out', iterations: 1, direction: 'normal' },
-            assetId: aid,
-            fit: style.backgroundSize === 'cover' ? 'cover' : style.backgroundSize === 'contain' ? 'contain' : 'cover',
-            borderRadius: parseFloat(style.borderRadius) || 0,
-          };
-          push(el); return;
-        }
-      }
+        const offCanvas =
+          x + w <= 0 || y + h <= 0 || x >= crect.width || y >= crect.height;
+        const base = {
+          x, y, width: w, height: h, rotation,
+          opacity: initiallyHidden ? 1 : Math.min(1, Math.max(0, parseFloat(style.opacity) || 1)),
+          visible: !initiallyHidden && !offCanvas,
+          locked: false,
+          animation: ANIM(),
+        };
 
-      // leaf nodes with their own text → text element (or button)
-      const ownText = [...node.childNodes]
-        .filter((n) => n.nodeType === 3)
-        .map((n) => n.textContent ?? '')
-        .join(' ').trim();
-      if (ownText) {
-        const isBtn = tag === 'BUTTON' || tag === 'A' || style.cursor === 'pointer';
-        const fontWeight = Math.min(900, Math.max(100,
-          Math.round((parseFloat(style.fontWeight) || 400) / 100) * 100));
-        if (isBtn) {
-          const href = tag === 'A' ? node.getAttribute('href') ?? '' : '';
-          push({
-            id: uid(), type: 'button', name: ownText.slice(0, 24) || 'CTA',
-            x, y, width: w, height: h, rotation: 0, opacity: 1,
-            visible: true, locked: false,
-            animation: { preset: 'none', delay: 0, duration: 800, easing: 'ease-out', iterations: 1, direction: 'normal' },
-            label: ownText,
+        const tag = node.tagName;
+
+        if (tag === 'IMG') {
+          const srcAttr = node.getAttribute('src') ?? '';
+          let aid = srcAttr.startsWith('data:') ? dataUrlToAsset.get(srcAttr) : undefined;
+          if (!aid && srcAttr.startsWith('data:')) {
+            const a: AssetRef = {
+              id: uid('as'), name: 'imported-image', kind: 'image',
+              mimeType: srcAttr.slice(5, srcAttr.indexOf(';')) || 'image/png', src: srcAttr,
+            };
+            assets.push(a);
+            dataUrlToAsset.set(srcAttr, a.id);
+            aid = a.id;
+          }
+          if (!aid && /^https?:/i.test(srcAttr)) {
+            const a: AssetRef = {
+              id: uid('as'), name: basename(srcAttr.split('?')[0]) || 'remote-image',
+              kind: 'image', mimeType: 'image/png', src: srcAttr,
+            };
+            assets.push(a);
+            aid = a.id;
+          }
+          if (aid) {
+            const el: ImageElement = {
+              id: uid(), type: 'image', name: node.getAttribute('alt') || 'Image',
+              ...base,
+              assetId: aid,
+              fit: style.objectFit === 'cover' || style.objectFit === 'contain' ? style.objectFit : 'fill',
+              borderRadius: parseFloat(style.borderRadius) || 0,
+            };
+            elements.push(el);
+            return;
+          }
+        }
+
+        // background-image / gradient elements → image element or shape fill
+        const bg = style.backgroundImage;
+        const bgUrl = /url\(["']?(.*?)["']?\)/.exec(bg)?.[1] ?? '';
+        if (bgUrl) {
+          let aid = dataUrlToAsset.get(bgUrl);
+          if (!aid && bgUrl.startsWith('data:')) {
+            const a: AssetRef = {
+              id: uid('as'), name: 'bg-image', kind: 'image',
+              mimeType: bgUrl.slice(5, bgUrl.indexOf(';')) || 'image/png', src: bgUrl,
+            };
+            assets.push(a); dataUrlToAsset.set(bgUrl, a.id); aid = a.id;
+          }
+          if (aid) {
+            const el: ImageElement = {
+              id: uid(), type: 'image', name: 'Background image',
+              ...base,
+              assetId: aid,
+              fit: style.backgroundSize === 'contain' ? 'contain' : 'cover',
+              borderRadius: parseFloat(style.borderRadius) || 0,
+            };
+            elements.push(el);
+            // still recurse — the div may contain text/cta children
+            for (const child of Array.from(node.children)) walk(child);
+            return;
+          }
+        }
+        // gradient with no resolvable url → remember first stop as fill
+        const gradientFill = /gradient\(/.test(bg)
+          ? (rgbToHex(/#[0-9a-f]{3,8}|rgba?\([^)]*\)/i.exec(bg)?.[0] ?? '') ?? null)
+          : null;
+
+        // leaf nodes with their own text → text element (or button)
+        const ownText = [...node.childNodes]
+          .filter((n) => n.nodeType === 3)
+          .map((n) => n.textContent ?? '')
+          .join(' ').trim();
+        if (ownText) {
+          const isBtn = tag === 'BUTTON' || tag === 'A' || style.cursor === 'pointer';
+          const fontWeight = Math.min(900, Math.max(100,
+            Math.round((parseFloat(style.fontWeight) || 400) / 100) * 100));
+          if (isBtn) {
+            const href = tag === 'A' ? node.getAttribute('href') ?? '' : '';
+            const el: ButtonElement = {
+              id: uid(), type: 'button', name: ownText.slice(0, 24) || 'CTA',
+              ...base,
+              label: ownText,
+              fontFamily: style.fontFamily || 'Arial, sans-serif',
+              fontSize: Math.round(parseFloat(style.fontSize) || 12),
+              fontWeight,
+              color: rgbToHex(style.color) ?? '#ffffff',
+              background: rgbToHex(style.backgroundColor) ?? '#111111',
+              borderRadius: parseFloat(style.borderRadius) || 0,
+              url: /^https?:/i.test(href) ? href : '',
+            };
+            elements.push(el);
+            return;
+          }
+          const el: TextElement = {
+            id: uid(), type: 'text',
+            name: ownText.slice(0, 24) || 'Text',
+            ...base,
+            content: ownText,
             fontFamily: style.fontFamily || 'Arial, sans-serif',
             fontSize: Math.round(parseFloat(style.fontSize) || 12),
             fontWeight,
-            color: rgbToHex(style.color) ?? '#ffffff',
-            background: rgbToHex(style.backgroundColor) ?? '#111111',
-            borderRadius: parseFloat(style.borderRadius) || 0,
-            url: /^https?:/i.test(href) ? href : '',
-          } as ButtonElement);
+            lineHeight: style.lineHeight === 'normal' ? 1.2 : Math.round((parseFloat(style.lineHeight) || 14) / (parseFloat(style.fontSize) || 12) * 100) / 100,
+            letterSpacing: style.letterSpacing === 'normal' ? 0 : parseFloat(style.letterSpacing) || 0,
+            color: rgbToHex(style.color) ?? style.color,
+            textAlign: (style.textAlign === 'center' || style.textAlign === 'right') ? style.textAlign : 'left',
+            direction: style.direction === 'rtl' ? 'rtl' : 'ltr',
+            background: 'transparent',
+          };
+          elements.push(el);
           return;
         }
-        const el: TextElement = {
-          id: uid(), type: 'text',
-          name: ownText.slice(0, 24) || 'Text',
-          x, y, width: w, height: h, rotation: 0, opacity: 1,
-          visible: true, locked: false,
-          animation: { preset: 'none', delay: 0, duration: 800, easing: 'ease-out', iterations: 1, direction: 'normal' },
-          content: ownText,
-          fontFamily: style.fontFamily || 'Arial, sans-serif',
-          fontSize: Math.round(parseFloat(style.fontSize) || 12),
-          fontWeight,
-          lineHeight: style.lineHeight === 'normal' ? 1.2 : Math.round((parseFloat(style.lineHeight) || 14) / (parseFloat(style.fontSize) || 12) * 100) / 100,
-          letterSpacing: style.letterSpacing === 'normal' ? 0 : parseFloat(style.letterSpacing) || 0,
-          color: rgbToHex(style.color) ?? style.color,
-          textAlign: (style.textAlign === 'center' || style.textAlign === 'right') ? style.textAlign : 'left',
-          direction: style.direction === 'rtl' ? 'rtl' : 'ltr',
-          background: 'transparent',
-        };
-        push(el);
-        return;
-      }
 
-      // visible filled containers → shape
-      const bgCol = style.backgroundColor;
-      const hasBg = bgCol && bgCol !== 'rgba(0, 0, 0, 0)' && bgCol !== 'transparent';
-      const hasBorder = parseFloat(style.borderWidth) > 0 && style.borderStyle !== 'none';
-      const hasChildren = node.children.length > 0;
-      if ((hasBg || hasBorder) && !hasChildren && node !== container) {
-        const el: ShapeElement = {
-          id: uid(), type: 'shape', name: 'Shape',
-          x, y, width: w, height: h, rotation: 0, opacity: 1,
-          visible: true, locked: false,
-          animation: { preset: 'none', delay: 0, duration: 800, easing: 'ease-out', iterations: 1, direction: 'normal' },
-          shape: parseFloat(style.borderRadius) > Math.min(w, h) / 2.5 ? 'ellipse' : 'rect',
-          fill: rgbToHex(bgc) ?? bgc ?? 'transparent',
-          borderColor: rgbToHex(style.borderColor) ?? 'transparent',
-          borderWidth: hasBorder ? Math.round(parseFloat(style.borderWidth)) : 0,
-          borderRadius: parseFloat(style.borderRadius) || 0,
-        };
-        push(el); return;
-      }
+        // filled / bordered nodes → shape (gradient counts as a fill)
+        const bgCol = style.backgroundColor;
+        const hasBg =
+          (bgCol && bgCol !== 'rgba(0, 0, 0, 0)' && bgCol !== 'transparent') || gradientFill;
+        const hasBorder = parseFloat(style.borderWidth) > 0 && style.borderStyle !== 'none';
+        const fill =
+          rgbToHex(bgCol) ?? gradientFill ??
+          (hasBorder ? 'transparent' : '');
+        if ((hasBg || hasBorder) && node !== container) {
+          const el: ShapeElement = {
+            id: uid(), type: 'shape', name: node.children.length ? 'Panel' : 'Shape',
+            ...base,
+            shape: parseFloat(style.borderRadius) > Math.min(w, h) / 2.5 ? 'ellipse' : 'rect',
+            fill: fill || 'transparent',
+            borderColor: rgbToHex(style.borderColor) ?? 'transparent',
+            borderWidth: hasBorder ? Math.round(parseFloat(style.borderWidth)) : 0,
+            borderRadius: parseFloat(style.borderRadius) || 0,
+          };
+          // skip near-full-bleed wrapper panels — usually the ad body itself
+          if (w * h < crect.width * crect.height * 0.98 || !node.children.length) {
+            elements.push(el);
+          }
+        }
 
-      // containers also get a shape if they carry an obvious fill
-      if (hasBg && node !== container && node.children.length > 0 && w * h < crect.width * crect.height * 0.95) {
-        const el: ShapeElement = {
-          id: uid(), type: 'shape', name: 'Panel',
-          x, y, width: w, height: h, rotation: 0, opacity: 1,
-          visible: true, locked: false,
-          animation: { preset: 'none', delay: 0, duration: 800, easing: 'ease-out', iterations: 1, direction: 'normal' },
-          shape: 'rect',
-          fill: rgbToHex(bgc) ?? bgc ?? 'transparent',
-          borderColor: 'transparent', borderWidth: 0,
-          borderRadius: parseFloat(style.borderRadius) || 0,
-        };
-        push(el);
+        for (const child of Array.from(node.children)) walk(child);
+      } finally {
+        // restore authored styles before measuring siblings
+        if (initiallyHidden) {
+          if (savedStyle !== null) node.setAttribute('style', savedStyle);
+          else node.removeAttribute('style');
+        }
       }
-
-      for (const child of Array.from(node.children)) walk(child);
     };
 
     for (const child of Array.from(container.children)) walk(child);
@@ -437,8 +502,8 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     return {
       ok: true, fidelity: 'flattened', project: check.project,
       message:
-        `Imported as ${elements.length} flattened element(s) + ${assets.length} asset(s). ` +
-        `Component animations collapse to their first frame — re-add carousels/cubes manually.`,
+        `Imported ${elements.length} element(s) + ${assets.length} asset(s). ` +
+        `Off-stage/staged frames arrive as hidden layers — JS-driven motion isn't reconstructed, re-add animations in the timeline.`,
     };
   } finally {
     iframe.remove();
