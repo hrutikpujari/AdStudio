@@ -5,9 +5,11 @@ import type {
   AdElement,
   AssetRef,
   ButtonElement,
+  CarouselElement,
   CreativeProject,
   ImageElement,
   ShapeElement,
+  SlideConfig,
   TextElement,
 } from '../model/types';
 
@@ -301,6 +303,151 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       return Math.round(v);
     };
 
+    const allStyleText = Array.from(doc.querySelectorAll('style'))
+      .map((s) => s.textContent ?? '').join('\n');
+
+    // register a (possibly remote/data) <img> src as an asset, reusing
+    // whatever was already captured — shared by the plain IMG branch
+    // and the carousel-slide detector below
+    const registerImgAsset = (srcAttr: string): string | undefined => {
+      if (!srcAttr) return undefined;
+      let aid = srcAttr.startsWith('data:') ? dataUrlToAsset.get(srcAttr) : undefined;
+      if (!aid && srcAttr.startsWith('data:')) {
+        const a: AssetRef = {
+          id: uid('as'), name: 'imported-image', kind: 'image',
+          mimeType: srcAttr.slice(5, srcAttr.indexOf(';')) || 'image/png', src: srcAttr,
+        };
+        assets.push(a);
+        dataUrlToAsset.set(srcAttr, a.id);
+        aid = a.id;
+      }
+      if (!aid && /^https?:/i.test(srcAttr)) {
+        const a: AssetRef = {
+          id: uid('as'), name: basename(srcAttr.split('?')[0]) || 'remote-image',
+          kind: 'image', mimeType: 'image/png', src: srcAttr,
+        };
+        assets.push(a);
+        aid = a.id;
+      }
+      return aid;
+    };
+
+    // Recognize a JS-driven "staged slides" carousel — the same
+    // center/left/right/hidden pattern used across the inspected
+    // references (CarouselSlider, Spotlight, etc): 3+ sibling
+    // containers, each holding one image, each roughly the same size
+    // but authored at different staging offsets. When found, synthesize
+    // a real CarouselElement (which has its own working autoplay
+    // runtime) instead of flattening each slide to a static image.
+    const detectSlideGroup = (node: Element): CarouselElement | null => {
+      const kids = Array.from(node.children) as HTMLElement[];
+      if (kids.length < 3) return null;
+
+      const saved = kids.map((k) => k.getAttribute('style'));
+      kids.forEach((k) => {
+        k.style.setProperty('display', 'block', 'important');
+        k.style.setProperty('visibility', 'visible', 'important');
+        k.style.setProperty('opacity', '1', 'important');
+      });
+      const rects = kids.map((k) => k.getBoundingClientRect());
+      const filters = kids.map((k) => iwin.getComputedStyle(k).filter);
+      kids.forEach((k, i) => {
+        if (saved[i] !== null) k.setAttribute('style', saved[i]!);
+        else k.removeAttribute('style');
+      });
+
+      const valid = rects.filter((r) => r.width >= 10 && r.height >= 10);
+      if (valid.length < 3) return null;
+      const avgW = valid.reduce((s, r) => s + r.width, 0) / valid.length;
+      const avgH = valid.reduce((s, r) => s + r.height, 0) / valid.length;
+      const uniform = valid.every((r) =>
+        Math.abs(r.width - avgW) / avgW < 0.4 && Math.abs(r.height - avgH) / avgH < 0.4);
+      if (!uniform) return null;
+
+      const imgs = kids.map((k) => (k.tagName === 'IMG' ? k : k.querySelector('img')));
+      if (imgs.filter(Boolean).length < Math.max(3, kids.length - 1)) return null;
+
+      const slides: SlideConfig[] = kids.map((_, i) => ({
+        id: uid('sl'),
+        assetId: registerImgAsset(imgs[i]?.getAttribute('src') ?? ''),
+        title: '', subtitle: '',
+      }));
+      if (slides.filter((s) => s.assetId).length < 2) return null;
+
+      const common = kids.length
+        ? [...new Set(Array.from(kids[0].classList))].filter((c) => kids.every((k) => k.classList.contains(c)))
+        : [];
+      const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      // The un-stated items (no JS-assigned modifier) all sit at the same
+      // authored "default" offset, which is usually an off-stage position
+      // — not a usable bounding box. Instead, discover the modifier class
+      // that represents the "shown/center" state (largest rendered area
+      // among <base>.<modifier> selectors) and measure one slide in it.
+      let box = { left: 0, top: 0, width: 0, height: 0 };
+      const modifiers = new Set<string>();
+      for (const c of common) {
+        const re = new RegExp(`\\.${esc(c)}\\.([a-zA-Z0-9_-]+)`, 'g');
+        let mm: RegExpExecArray | null;
+        while ((mm = re.exec(allStyleText))) modifiers.add(mm[1]);
+      }
+      let bestArea = 0;
+      const probe = kids[0];
+      const probeSaved = probe.getAttribute('class');
+      for (const mod of modifiers) {
+        probe.classList.add(mod);
+        const pr = probe.getBoundingClientRect();
+        const area = pr.width * pr.height;
+        if (area > bestArea) {
+          bestArea = area;
+          box = { left: pr.left, top: pr.top, width: pr.width, height: pr.height };
+        }
+        probe.classList.remove(mod);
+      }
+      if (probeSaved !== null) probe.setAttribute('class', probeSaved);
+      else probe.removeAttribute('class');
+
+      // fall back to the uniform-size union only if it's plausibly
+      // within the artboard; otherwise center a default-sized box
+      if (bestArea === 0) {
+        const left = Math.min(...valid.map((r) => r.left));
+        const top = Math.min(...valid.map((r) => r.top));
+        const right = Math.max(...valid.map((r) => r.left + r.width));
+        const bottom = Math.max(...valid.map((r) => r.top + r.height));
+        const plausible = left < crect.right && right > crect.left && top < crect.bottom && bottom > crect.top;
+        box = plausible
+          ? { left, top, width: right - left, height: bottom - top }
+          : { left: crect.left + crect.width * 0.15, top: crect.top + crect.height * 0.3, width: crect.width * 0.7, height: crect.height * 0.45 };
+      }
+
+      // stage variant dims non-center slides via filter — search the
+      // stylesheet for any <base>.<modifier> rule carrying a filter,
+      // since the default (class-less) state never shows it
+      const stageLike = common.some((c) =>
+        new RegExp(`\\.${esc(c)}\\.[a-zA-Z0-9_-]+[^{]*\\{[^}]*filter\\s*:\\s*brightness`, 'i').test(allStyleText));
+      const variant: 'coverflow' | 'stage' = stageLike || filters.some((f) => f && f !== 'none') ? 'stage' : 'coverflow';
+      const intervalMs = parseInt(/setInterval\([^,]+,\s*(\d+)\s*\)/.exec(html)?.[1] ?? '') || 2500;
+      let transitionMs = 600;
+      for (const c of common) {
+        const re = new RegExp(`\\.${esc(c)}[^{]*\\{[^}]*transition:[^;]*?(\\d*\\.?\\d+)s`, 'i');
+        const m = re.exec(allStyleText);
+        if (m) { transitionMs = Math.round(parseFloat(m[1]) * 1000); break; }
+      }
+
+      return {
+        id: uid(), type: 'carousel', name: 'Carousel',
+        x: Math.round(box.left - crect.left), y: Math.round(box.top - crect.top),
+        width: Math.round(box.width), height: Math.round(box.height),
+        rotation: 0, opacity: 1, visible: true, locked: false,
+        animation: ANIM(),
+        config: {
+          slides, autoplay: true, intervalMs, transitionMs,
+          pauseOnHover: /clearInterval/.test(html) && /mouseenter|mouseover/.test(html),
+          variant,
+        },
+      };
+    };
+
     const walk = (node: Element) => {
       if (elements.length > 150) return;
       if (node.classList.contains('clickLayer') || node.id === 'clickLayer') return;
@@ -366,24 +513,7 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
 
         if (tag === 'IMG') {
           const srcAttr = node.getAttribute('src') ?? '';
-          let aid = srcAttr.startsWith('data:') ? dataUrlToAsset.get(srcAttr) : undefined;
-          if (!aid && srcAttr.startsWith('data:')) {
-            const a: AssetRef = {
-              id: uid('as'), name: 'imported-image', kind: 'image',
-              mimeType: srcAttr.slice(5, srcAttr.indexOf(';')) || 'image/png', src: srcAttr,
-            };
-            assets.push(a);
-            dataUrlToAsset.set(srcAttr, a.id);
-            aid = a.id;
-          }
-          if (!aid && /^https?:/i.test(srcAttr)) {
-            const a: AssetRef = {
-              id: uid('as'), name: basename(srcAttr.split('?')[0]) || 'remote-image',
-              kind: 'image', mimeType: 'image/png', src: srcAttr,
-            };
-            assets.push(a);
-            aid = a.id;
-          }
+          const aid = registerImgAsset(srcAttr);
           if (aid) {
             const el: ImageElement = {
               id: uid(), type: 'image', name: node.getAttribute('alt') || 'Image',
@@ -498,7 +628,12 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
         }
         }
 
-        for (const child of Array.from(node.children)) walk(child);
+        const slideGroup = detectSlideGroup(node);
+        if (slideGroup) {
+          elements.push(slideGroup);
+        } else {
+          for (const child of Array.from(node.children)) walk(child);
+        }
       } finally {
         // restore authored styles before measuring siblings
         if (initiallyHidden) {
@@ -520,11 +655,15 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     if (!check.ok) {
       return { ok: false, fidelity: 'flattened', message: `Import produced invalid data: ${check.errors[0]}` };
     }
+    const carouselCount = elements.filter((e) => e.type === 'carousel').length;
     return {
       ok: true, fidelity: 'flattened', project: check.project,
       message: elements.length
-        ? `Imported ${elements.length} element(s) + ${assets.length} asset(s). ` +
-          `Off-stage/staged frames arrive as hidden layers — JS-driven motion isn't reconstructed, re-add animations in the timeline.`
+        ? `Imported ${elements.length} element(s) + ${assets.length} asset(s)` +
+          (carouselCount
+            ? `, including ${carouselCount} working carousel(s) reconstructed from staged slides. ` +
+              `Other JS-driven motion isn't reconstructed — re-add animations in the timeline.`
+            : `. Off-stage/staged frames arrive as hidden layers — JS-driven motion isn't reconstructed, re-add animations in the timeline.`)
         : `Rendered but measured 0 elements — the creative likely builds its DOM in JavaScript, which is stripped on import. ${assets.length} asset(s) were added to the library.`,
     };
   } finally {
