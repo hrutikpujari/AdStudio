@@ -134,14 +134,18 @@ function genCarousel(ctx: Ctx, el: CarouselElement, z: number): ComponentOut {
     .map((s) => `<div class="cr-item">${slideInner(ctx, s, 'cr')}</div>`)
     .join('');
   const inner = `<div class="cr-wrap" data-hover="${c.pauseOnHover ? 1 : 0}">${slides}</div>`;
+  const sw = c.slideWPct ?? 70;
+  const sh = c.slideHPct ?? 86;
+  const sx = c.sideXPct ?? (stage ? 110 : 75);
+  const ss = c.sideScale ?? (stage ? 0.4 : 0.8);
   const css = `
 #css-${el.id} .cr-wrap{position:absolute;inset:0}
-#css-${el.id} .cr-item{position:absolute;top:50%;left:50%;width:70%;height:86%;display:flex;justify-content:center;align-items:center;
+#css-${el.id} .cr-item{position:absolute;top:50%;left:50%;width:${sw}%;height:${sh}%;display:flex;justify-content:center;align-items:center;
  transition:transform ${c.transitionMs}ms ease-in-out,opacity ${c.transitionMs}ms ease-in-out,filter ${c.transitionMs}ms ease-in-out;
  transform:translate(calc(-50% + 180%),-50%) scale(.5);opacity:0;z-index:0}
 #css-${el.id} .cr-item.center{transform:translate(-50%,-50%) scale(1);opacity:1;z-index:3;filter:none}
-#css-${el.id} .cr-item.left{transform:translate(calc(-50% - ${stage ? 110 : 75}%),-50%) scale(${stage ? 0.4 : 0.8});opacity:.5;z-index:2${stage ? ';filter:brightness(.45) saturate(.5)' : ''}}
-#css-${el.id} .cr-item.right{transform:translate(calc(-50% + ${stage ? 110 : 75}%),-50%) scale(${stage ? 0.4 : 0.8});opacity:.5;z-index:2${stage ? ';filter:brightness(.45) saturate(.5)' : ''}}
+#css-${el.id} .cr-item.left{transform:translate(calc(-50% - ${sx}%),-50%) scale(${ss});opacity:.5;z-index:2${stage ? ';filter:brightness(.45) saturate(.5)' : ''}}
+#css-${el.id} .cr-item.right{transform:translate(calc(-50% + ${sx}%),-50%) scale(${ss});opacity:.5;z-index:2${stage ? ';filter:brightness(.45) saturate(.5)' : ''}}
 #css-${el.id} .cr-item.hidden{transform:translate(calc(-50% - 160%),-50%) scale(.4);opacity:0;z-index:0}`;
   const runtime = `(function(){
  var wrap=document.querySelector('#css-${el.id} .cr-wrap');if(!wrap)return;

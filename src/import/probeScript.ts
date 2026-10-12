@@ -150,6 +150,7 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
     // live rects (class transforms applied) — used for the box below
     const rects = kids.map((k) => visualRect(k));
     const filters = kids.map((k) => W.getComputedStyle(k).filter);
+    const opas = kids.map((k) => parseFloat(W.getComputedStyle(k).opacity) || 0);
 
     // "same kind of slide" = same natural (un-transformed) size;
     // state-dependent scale differences must not count
@@ -188,20 +189,51 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       : [];
     const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    // bounding box: on live DOM a JS-assigned "shown" class is usually
-    // already on one slide — find the kid whose rendered area is the
-    // largest and inside the container; fall back to modifier probing
+    // stage box: union of *visible* slide rects overlapping the container,
+    // symmetrised around the centre slide so the component's 50%/50%
+    // anchoring reproduces the source layout exactly.
     let box = { left: 0, top: 0, width: 0, height: 0 };
     let bestArea = 0;
-    kids.forEach((_k, i) => {
-      const r = rects[i];
-      const area = r.width * r.height;
-      const inside = r.left < crect.right && r.right > crect.left && r.top < crect.bottom && r.bottom > crect.top;
-      if (area > bestArea && inside) {
-        bestArea = area;
-        box = { left: r.left, top: r.top, width: r.width, height: r.height };
+    let ci = -1;
+    rects.forEach((r, i) => {
+      if (r.width >= 4 && r.height >= 4 && opas[i] > 0.05 &&
+        r.left < crect.right && r.right > crect.left &&
+        r.top < crect.bottom && r.bottom > crect.top) {
+        const a = Math.min(r.right, crect.right) - Math.max(r.left, crect.left);
+        const b = Math.min(r.bottom, crect.bottom) - Math.max(r.top, crect.top);
+        if (a * b > bestArea) { bestArea = a * b; ci = i; }
       }
     });
+    const geom: Record<string, number> = {};
+    if (ci >= 0) {
+      const vis = rects.filter((r, i) => r.width >= 4 && r.height >= 4 && opas[i] > 0.05);
+      const cc = rects[ci];
+      const cx = (cc.left + cc.right) / 2;
+      const cy = (cc.top + cc.bottom) / 2;
+      const L = Math.max(crect.left, Math.min(...vis.map((r) => r.left)));
+      const T = Math.max(crect.top, Math.min(...vis.map((r) => r.top)));
+      const R = Math.min(crect.right, Math.max(...vis.map((r) => r.right)));
+      const B = Math.min(crect.bottom, Math.max(...vis.map((r) => r.bottom)));
+      const hw = Math.max(cx - L, R - cx, natural[ci].width / 2);
+      const hh = Math.max(cy - T, B - cy, natural[ci].height / 2);
+      box = { left: cx - hw, top: cy - hh, width: hw * 2, height: hh * 2 };
+      bestArea = box.width * box.height;
+      // measured slide geometry: card size as % of box, side offset as
+      // % of the card's natural width, side scale factor — lets the
+      // carousel runtime reproduce the source layout exactly
+      const nw = natural[ci].width, nh = natural[ci].height;
+      geom.slideWPct = Math.round((nw / box.width) * 1000) / 10;
+      geom.slideHPct = Math.round((nh / box.height) * 1000) / 10;
+      const sides = vis.filter(
+        (r) => r !== cc && Math.abs((r.left + r.right) / 2 - cx) > nw * 0.3,
+      );
+      if (sides.length) {
+        const dx = sides.reduce((s, r) => s + Math.abs((r.left + r.right) / 2 - cx), 0) / sides.length;
+        const sc = sides.reduce((s, r) => s + r.width, 0) / sides.length / nw;
+        geom.sideXPct = Math.round((dx / nw) * 1000) / 10;
+        geom.sideScale = Math.round(sc * 100) / 100;
+      }
+    }
     if (bestArea === 0) {
       const modifiers = new Set<string>();
       for (const c of common) {
@@ -256,6 +288,7 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
         slides, autoplay: true, intervalMs, transitionMs,
         pauseOnHover: /clearInterval/.test(cfg.html) && /mouseenter|mouseover/.test(cfg.html),
         variant,
+        ...(geom.slideWPct != null ? geom : {}),
       },
     };
   };

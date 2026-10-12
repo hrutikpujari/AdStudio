@@ -90,6 +90,10 @@ const elementSchema = z.discriminatedUnion('type', [
       transitionMs: z.number().min(50).max(10000),
       pauseOnHover: z.boolean(),
       variant: z.enum(['coverflow', 'stage']),
+      slideWPct: z.number().min(5).max(200).optional(),
+      slideHPct: z.number().min(5).max(200).optional(),
+      sideXPct: z.number().min(0).max(500).optional(),
+      sideScale: z.number().min(0.05).max(1.5).optional(),
     }),
   }),
   z.object({

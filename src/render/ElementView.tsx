@@ -32,12 +32,17 @@ function SlideThumb({ slide, assets, accent }: { slide: SlideConfig; assets: Ass
 
 function CarouselView({ el, assets }: { el: CarouselElement; assets: AssetRef[] }) {
   const slides = el.config.slides;
-  const stage = el.config.variant === 'stage';
+  const c = el.config;
+  const stage = c.variant === 'stage';
+  const sw = c.slideWPct ?? 70;
+  const sh = c.slideHPct ?? 86;
+  const sx = c.sideXPct ?? (stage ? 110 : 75);
+  const ss = c.sideScale ?? (stage ? 0.4 : 0.8);
   const side = (idx: number, dir: -1 | 1) =>
     slides[idx] && (
       <div style={{
-        position: 'absolute', top: '50%', left: '50%', width: '70%', height: '86%',
-        transform: `translate(calc(-50% ${dir > 0 ? '+' : '-'} ${stage ? 110 : 75}%), -50%) scale(${stage ? 0.4 : 0.8})`,
+        position: 'absolute', top: '50%', left: '50%', width: `${sw}%`, height: `${sh}%`,
+        transform: `translate(calc(-50% ${dir > 0 ? '+' : '-'} ${sx}%), -50%) scale(${ss})`,
         opacity: 0.5, filter: stage ? 'brightness(.45) saturate(.5)' : undefined, zIndex: 2,
       }}>
         <SlideThumb slide={slides[idx]} assets={assets} accent="#b3e0ff" />
@@ -48,7 +53,7 @@ function CarouselView({ el, assets }: { el: CarouselElement; assets: AssetRef[] 
       {slides.length > 2 ? side(1, 1) : null}
       {slides.length > 1 ? side(slides.length - 1, -1) : null}
       <div style={{
-        position: 'absolute', top: '50%', left: '50%', width: '70%', height: '86%',
+        position: 'absolute', top: '50%', left: '50%', width: `${sw}%`, height: `${sh}%`,
         transform: 'translate(-50%, -50%)', zIndex: 3, boxShadow: '0 2px 10px rgba(0,0,0,.18)',
       }}>
         {slides[0] ? <SlideThumb slide={slides[0]} assets={assets} accent="#b3e0ff" /> : null}

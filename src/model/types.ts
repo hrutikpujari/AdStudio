@@ -88,6 +88,14 @@ export interface CarouselConfig {
   /** 'coverflow' = clean 75%/scale(.8) side cards (CarouselSlider ref);
    *  'stage' = wider offset, heavy dim filter (Danube Spotlight ref) */
   variant: 'coverflow' | 'stage';
+  /** measured geometry overrides (set by the importer to match a source
+   *  creative): slide size as % of the component box, side offset as %
+   *  of the slide's natural width, side scale factor.
+   *  Undefined = built-in defaults (70/86, 110|75, 0.4|0.8). */
+  slideWPct?: number;
+  slideHPct?: number;
+  sideXPct?: number;
+  sideScale?: number;
 }
 
 export interface CardStackConfig {
