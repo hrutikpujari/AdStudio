@@ -106,7 +106,14 @@ async function inlineAssets(src: Source): Promise<{ map: Map<string, string>; cs
     if (!/\.(css|js)$/i.test(p)) continue;
     const bytes = await src.getBytes(p);
     if (!bytes) continue;
-    const body = rewritePathLiterals(new TextDecoder().decode(bytes), map);
+    let body = rewritePathLiterals(new TextDecoder().decode(bytes), map);
+    // measurement must never depend on live network access — a remote
+    // @font-face (e.g. Google Fonts) can stall/slow the probe's render
+    // in a sandboxed iframe with no connectivity guarantee. Fonts don't
+    // affect any geometry we track (px-sized boxes), so strip them here;
+    // the real exported HTML is generated independently and never
+    // carries this raw CSS forward.
+    if (/\.css$/i.test(p)) body = body.replace(/@font-face\s*\{[^}]*\}/gi, '');
     if (/\.css$/i.test(p)) cssParts.push(body);
     map.set(p, `data:${/\.css$/i.test(p) ? 'text/css' : 'text/javascript'};base64,${b64Text(body)}`);
   }
@@ -167,11 +174,24 @@ export async function importZip(file: File): Promise<ImportResult> {
 /* ------------------------- folder / file path ----------------------- */
 
 export async function importFolderFiles(list: FileList): Promise<ImportResult> {
+  const raw = Array.from(list).map((f) => ({
+    f,
+    rel: normPath((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name),
+  }));
+  // A folder pick prefixes every path with the selected folder's name; strip
+  // that common leading segment so keys match the creative's relative refs.
+  let prefix = '';
+  const first = raw[0]?.rel ?? '';
+  const cut = first.indexOf('/');
+  if (cut > 0) {
+    const head = first.slice(0, cut + 1);
+    if (raw.length > 1 && raw.every((r) => r.rel.startsWith(head))) prefix = head;
+  }
   const files = new Map<string, File>();
   let htmlFile: File | null = null;
   let htmlScore = Infinity;
-  for (const f of Array.from(list)) {
-    const rel = normPath((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name);
+  for (const { f, rel: full } of raw) {
+    const rel = prefix && full.startsWith(prefix) ? full.slice(prefix.length) : full;
     files.set(rel, f);
     if (/\.html?$/i.test(rel)) {
       const score = rel.toLowerCase() === 'index.html' ? 0 : rel.split('/').length;
@@ -290,10 +310,13 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
   const dataUrlToAsset = new Map<string, string>();
   const project = createProject(src.name || 'Imported creative', W || 300, H || 250);
 
-  // resolve a relative ref to a data URL + register it as an asset
+  // resolve a relative ref to a data URL + register it as an asset.
+  // Only actual image/font files become assets — a stylesheet or
+  // script matched by a stray href/src must never be pushed as one.
   const resolveRef = async (ref: string): Promise<string | null> => {
     const clean = normPath(ref.split('?')[0].split('#')[0]);
     if (!clean || /^data:|^https?:|^blob:/i.test(clean)) return null;
+    if (!IMG_EXT.test(clean) && !FONT_EXT.test(clean)) return null;
     const tryPaths = [clean, basename(clean)];
     const cands = src.candidates();
     for (const t of tryPaths) {
