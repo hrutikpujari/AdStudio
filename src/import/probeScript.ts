@@ -52,6 +52,19 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
     return `#${hex(r)}${hex(g)}${hex(b)}`;
   }
 
+  /** alpha channel of an rgba()/#rrggbbaa color string, default 1 — used so a
+   *  translucent gradient/background doesn't get flattened into an opaque
+   *  shape that occludes whatever sits visually behind it in the source. */
+  function alphaOf(c: string): number {
+    const m = /rgba?\(([^)]+)\)/.exec(c);
+    if (m) {
+      const parts = m[1].split(',');
+      return parts.length > 3 ? Math.max(0, Math.min(1, parseFloat(parts[3]))) : 1;
+    }
+    const hx = /^#[0-9a-f]{8}$/i.exec(c);
+    return hx ? parseInt(c.slice(7, 9), 16) / 255 : 1;
+  }
+
   const normDeg = (d: number) => {
     let v = d % 360;
     if (v > 180) v -= 360;
@@ -444,9 +457,11 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
             return;
           }
         }
-        const gradientFill = /gradient\(/.test(bgImg)
-          ? (rgbToHex(/#[0-9a-f]{3,8}|rgba?\([^)]*\)/i.exec(bgImg)?.[0] ?? '') ?? null)
-          : null;
+        const gradientStop = /gradient\(/.test(bgImg)
+          ? /#[0-9a-f]{3,8}|rgba?\([^)]*\)/i.exec(bgImg)?.[0] ?? ''
+          : '';
+        const gradientFill = gradientStop ? rgbToHex(gradientStop) ?? null : null;
+        const gradientAlpha = gradientStop ? alphaOf(gradientStop) : 1;
 
         const ownText = [...node.childNodes]
           .filter((n) => n.nodeType === 3)
@@ -498,10 +513,17 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
         const fill =
           rgbToHex(bgCol) ?? gradientFill ??
           (hasBorder ? 'transparent' : '');
+        // a translucent gradient/bg flattens to a solid shape — carry the
+        // stop's alpha into element opacity so it doesn't occlude whatever
+        // the source visually layers underneath it (e.g. a spotlight beam)
+        const fillAlpha = fill === gradientFill && gradientFill
+          ? gradientAlpha
+          : (bgCol ? alphaOf(bgCol) : 1);
         if ((hasBg || hasBorder) && node !== container) {
           const el = {
             id: uid(), type: 'shape', name: node.children.length ? 'Panel' : 'Shape',
             ...base,
+            opacity: Math.round(base.opacity * fillAlpha * 1000) / 1000,
             shape: parseFloat(style.borderRadius) > Math.min(w, h) / 2.5 ? 'ellipse' : 'rect',
             fill: fill || 'transparent',
             borderColor: rgbToHex(style.borderColor) ?? 'transparent',
