@@ -257,7 +257,7 @@ export function ElementView({ el, assets }: { el: AdElement; assets: AssetRef[] 
             width: '100%', height: '100%', border: 'none', cursor: 'pointer',
             background: el.background, color: el.color, borderRadius: el.borderRadius,
             fontFamily: el.fontFamily, fontSize: el.fontSize, fontWeight: el.fontWeight,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            direction: el.direction, display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             {el.label}
           </div>

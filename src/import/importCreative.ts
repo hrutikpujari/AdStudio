@@ -839,6 +839,7 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
               background: rgbToHex(style.backgroundColor) ?? '#111111',
               borderRadius: parseFloat(style.borderRadius) || 0,
               url: /^https?:/i.test(href) ? href : '',
+              direction: (node.getAttribute('dir') === 'rtl' || style.direction === 'rtl') ? 'rtl' : 'ltr',
             };
             elements.push(el);
             return;

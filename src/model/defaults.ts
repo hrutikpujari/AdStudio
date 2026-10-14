@@ -95,6 +95,7 @@ export function createElement(
         background: '#111111',
         borderRadius: 5,
         url: '',
+        direction: 'ltr',
       };
     case 'shape':
       return {

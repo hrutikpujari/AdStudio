@@ -401,6 +401,12 @@ export function PropertiesPanel() {
             <input type="color" title="Text" value={/^#[0-9a-f]{6}$/i.test(el.color) ? el.color : '#ffffff'} onChange={(e) => set({ color: e.target.value })} />
           </Row>
           <Row label="Radius"><Num value={el.borderRadius} min={0} max={200} onChange={(v) => set({ borderRadius: v })} /></Row>
+          <Row label="Direction">
+            <select value={el.direction} onChange={(e) => set({ direction: e.target.value as any })}>
+              <option value="ltr">LTR</option>
+              <option value="rtl">RTL (Arabic)</option>
+            </select>
+          </Row>
           <Row label="URL">
             <input type="text" value={el.url} onChange={(e) => set({ url: e.target.value })} placeholder="(uses clickTag)" />
           </Row>

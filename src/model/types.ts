@@ -198,6 +198,7 @@ export interface ButtonElement extends BaseElement {
   borderRadius: number;
   /** per-element click-through URL; empty -> project clickTag */
   url: string;
+  direction: 'ltr' | 'rtl';
 }
 
 export interface ShapeElement extends BaseElement {

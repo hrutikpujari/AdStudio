@@ -105,6 +105,7 @@ function genButton(_ctx: Ctx, el: ButtonElement, z: number): string {
     `width:100%;height:100%;border:none;cursor:pointer;padding:0;` +
     `background:${el.background};color:${el.color};border-radius:${el.borderRadius}px;` +
     `font-family:${el.fontFamily};font-size:${el.fontSize}px;font-weight:${el.fontWeight};` +
+    `direction:${el.direction ?? 'ltr'};` +
     `display:flex;align-items:center;justify-content:center;`;
   const url = el.url ? ` data-url="${esc(el.url)}"` : '';
   return elShell(el, z, `<button class="ap-cta" style="${st}"${url}>${esc(el.label)}</button>`, '', _ctx.scrubMs);

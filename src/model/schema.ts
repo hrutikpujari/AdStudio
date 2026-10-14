@@ -70,6 +70,7 @@ const elementSchema = z.discriminatedUnion('type', [
     background: z.string().max(60),
     borderRadius: z.number().min(0).max(200),
     url: z.string().max(2000),
+    direction: z.enum(['ltr', 'rtl']).default('ltr'),
   }),
   z.object({
     ...baseElement,

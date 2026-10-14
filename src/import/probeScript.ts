@@ -469,6 +469,7 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
               background: rgbToHex(style.backgroundColor) ?? '#111111',
               borderRadius: parseFloat(style.borderRadius) || 0,
               url: /^https?:/i.test(href) ? href : '',
+              direction: (node.getAttribute('dir') === 'rtl' || style.direction === 'rtl') ? 'rtl' : 'ltr',
             });
             return;
           }
