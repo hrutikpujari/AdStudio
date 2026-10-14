@@ -59,7 +59,7 @@ export function TopToolbar({
     <div className="toolbar">
       <div className="tb-title">
         <span className="logo-dot">AP</span>
-        AdPilot Studio
+        <span className="tb-title-text">AdPilot Studio</span>
       </div>
 
       <input

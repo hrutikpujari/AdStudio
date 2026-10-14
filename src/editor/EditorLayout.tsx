@@ -13,7 +13,7 @@ import { NewProjectDialog } from './NewProjectDialog';
 import { AiPanel } from './AiPanel';
 import { validateForExport, type ValidationIssue } from '../export/validate';
 import { buildCreativeZip, downloadBlob } from '../export/exportZip';
-import { CheckCircle2, X } from 'lucide-react';
+import { CheckCircle2, Film, Shapes, SlidersHorizontal, X } from 'lucide-react';
 
 export function EditorLayout() {
   const project = useEditor((s) => s.project);
@@ -40,6 +40,7 @@ export function EditorLayout() {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [aiPreview, setAiPreview] = useState<CreativeProject | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<'elements' | 'props' | 'timeline' | null>(null);
   const playStartRef = useRef(0);
 
   /* -------- fit zoom -------- */
@@ -195,7 +196,14 @@ export function EditorLayout() {
         onAi={() => setDialog('ai')}
       />
 
-      <div className="panel-left">
+      <div
+        className={`panel-left${mobilePanel === 'elements' ? ' open' : ''}`}
+        onClick={(e) => {
+          // after tapping an element chip or asset on mobile, close the
+          // drawer so the canvas result is visible
+          if ((e.target as HTMLElement).closest('.el-chip, .asset-thumb')) setMobilePanel(null);
+        }}
+      >
         <ElementsPanel />
         <LayersPanel />
       </div>
@@ -210,17 +218,42 @@ export function EditorLayout() {
         </div>
       </div>
 
-      <div className="panel-right">
+      <div className={`panel-right${mobilePanel === 'props' ? ' open' : ''}`}>
         <PropertiesPanel />
       </div>
 
-      <div className="timeline-area">
+      <div className={`timeline-area${mobilePanel === 'timeline' ? ' open' : ''}`}>
         <TimelinePanel
           playheadMs={previewOpen ? playheadMs : null}
           onPlay={() => openPreview()}
           onRestart={() => (previewOpen ? restartPreview() : openPreview())}
           onScrub={(ms) => openPreview(ms)}
         />
+      </div>
+
+      {mobilePanel && (
+        <div className="drawer-backdrop" onClick={() => setMobilePanel(null)} />
+      )}
+
+      <div className="mobile-bar">
+        <button
+          className={`mb-btn${mobilePanel === 'elements' ? ' active' : ''}`}
+          onClick={() => setMobilePanel((p) => (p === 'elements' ? null : 'elements'))}
+        >
+          <Shapes size={17} /> Elements
+        </button>
+        <button
+          className={`mb-btn${mobilePanel === 'timeline' ? ' active' : ''}`}
+          onClick={() => setMobilePanel((p) => (p === 'timeline' ? null : 'timeline'))}
+        >
+          <Film size={17} /> Timeline
+        </button>
+        <button
+          className={`mb-btn${mobilePanel === 'props' ? ' active' : ''}`}
+          onClick={() => setMobilePanel((p) => (p === 'props' ? null : 'props'))}
+        >
+          <SlidersHorizontal size={17} /> Edit
+        </button>
       </div>
 
       {(dialog === 'new' || dialog === 'open') && (

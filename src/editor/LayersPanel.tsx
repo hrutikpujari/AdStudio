@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { DragEvent } from 'react';
 import {
+  ChevronDown,
+  ChevronUp,
   Copy,
   Eye,
   EyeOff,
@@ -44,6 +46,7 @@ export function LayersPanel() {
   const removeElement = useEditor((s) => s.removeElement);
   const duplicateElement = useEditor((s) => s.duplicateElement);
   const moveElementToIndex = useEditor((s) => s.moveElementToIndex);
+  const reorderElement = useEditor((s) => s.reorderElement);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -111,6 +114,22 @@ export function LayersPanel() {
                 {el.name}
               </span>
             )}
+            <button
+              className="icon-btn touch-only"
+              title="Move up (forward)"
+              disabled={elements.indexOf(el) === elements.length - 1}
+              onClick={(e) => { e.stopPropagation(); reorderElement(el.id, 'up'); }}
+            >
+              <ChevronUp size={11} />
+            </button>
+            <button
+              className="icon-btn touch-only"
+              title="Move down (backward)"
+              disabled={elements.indexOf(el) === 0}
+              onClick={(e) => { e.stopPropagation(); reorderElement(el.id, 'down'); }}
+            >
+              <ChevronDown size={11} />
+            </button>
             <button
               className={'icon-btn' + (el.locked ? ' always' : '')}
               title={el.locked ? 'Unlock' : 'Lock'}

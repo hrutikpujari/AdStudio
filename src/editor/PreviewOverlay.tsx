@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RotateCcw, X } from 'lucide-react';
 import type { CreativeProject } from '../model/types';
 import { generateHtml } from '../export/generateHtml';
@@ -28,6 +28,22 @@ export function PreviewOverlay({ project, scrubMs, nonce, onRestart, onClose }: 
 
   const { width, height } = project.artboard;
 
+  // shrink the fixed-size frame to fit small screens
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setScale(Math.min(1, Math.max(0.1, (r.width - 4) / width), Math.max(0.1, (r.height - 4) / height)));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [width, height]);
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="dialog preview-dialog" onClick={(e) => e.stopPropagation()}>
@@ -46,16 +62,19 @@ export function PreviewOverlay({ project, scrubMs, nonce, onRestart, onClose }: 
             <button className="mini-btn" onClick={onClose}><X size={12} /></button>
           </div>
         </div>
-        <div className="preview-stage">
-          <iframe
-            key={`${nonce}-${scrubMs ?? 'live'}`}
-            className="preview-frame"
-            title="Creative preview"
-            width={width}
-            height={height}
-            sandbox="allow-scripts allow-popups"
-            srcDoc={srcDoc}
-          />
+        <div className="preview-stage" ref={stageRef}>
+          <div style={{ width: width * scale, height: height * scale, flexShrink: 0 }}>
+            <iframe
+              key={`${nonce}-${scrubMs ?? 'live'}`}
+              className="preview-frame"
+              title="Creative preview"
+              width={width}
+              height={height}
+              sandbox="allow-scripts allow-popups"
+              srcDoc={srcDoc}
+              style={scale < 1 ? { transform: `scale(${scale})`, transformOrigin: '0 0' } : undefined}
+            />
+          </div>
         </div>
       </div>
     </div>
