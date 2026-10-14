@@ -322,6 +322,12 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
 
   // JS-built slice-flip creatives: detection keys on container markup
   // plus a script array of image paths.
+  // the slice-flip container is empty at measure time (JS builds it), so
+  // it's detected ahead of the main walk — but it must still be pushed
+  // into `elements` at its real DOM position, or it always gets the
+  // lowest z-index and ends up buried under whatever renders after it
+  // (e.g. a background image sibling).
+  let sliceFlipAncestor: Element | null = null;
   const detectSliceFlip = (): Record<string, unknown> | null => {
     const sliceHost = D.querySelector(
       '[class*="slices_container"],[class*="slice-inner"],[id*="slice" i]',
@@ -354,6 +360,9 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
     };
 
     markConsumed(host);
+    let anc: Element | null = sliceHost;
+    while (anc && anc.parentElement && anc.parentElement !== container) anc = anc.parentElement;
+    sliceFlipAncestor = anc;
     return {
       id: uid(), type: 'slice-flip', name: 'Slice Flip',
       x: Math.round(r.left - crect.left), y: Math.round(r.top - crect.top),
@@ -551,9 +560,15 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
   };
 
   const sliceFlip = detectSliceFlip();
-  if (sliceFlip) elements.push(sliceFlip);
-
-  for (const child of Array.from(container.children)) walk(child);
+  let sliceFlipPushed = false;
+  for (const child of Array.from(container.children)) {
+    if (sliceFlip && !sliceFlipPushed && child === sliceFlipAncestor) {
+      elements.push(sliceFlip);
+      sliceFlipPushed = true;
+    }
+    walk(child);
+  }
+  if (sliceFlip && !sliceFlipPushed) elements.push(sliceFlip);
 
   const ct = /clickTag\s*=\s*['"]([^'"]+)['"]/.exec(cfg.html)?.[1];
 

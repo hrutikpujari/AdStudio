@@ -652,6 +652,11 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     // JS-built slice-flip creatives (BaytAlHadeeqa Slice): the slices
     // exist only at runtime, so detection keys on the container markup
     // plus a script array of image paths — not on rendered DOM.
+    // Detected ahead of the main walk, but must still land at its real
+    // DOM position in `elements` or it always gets the lowest z-index
+    // and ends up buried under whatever renders after it (e.g. a
+    // background image sibling).
+    let sliceFlipAncestor: Element | null = null;
     const detectSliceFlip = async (): Promise<SliceFlipElement | null> => {
       const sliceHost = idoc.querySelector(
         '[class*="slices_container"],[class*="slice-inner"],[id*="slice" i]',
@@ -689,6 +694,9 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       };
 
       markConsumed(host);
+      let anc: Element | null = sliceHost;
+      while (anc && anc.parentElement && anc.parentElement !== container) anc = anc.parentElement;
+      sliceFlipAncestor = anc;
       return {
         id: uid(), type: 'slice-flip', name: 'Slice Flip',
         x: Math.round(r.left - crect.left), y: Math.round(r.top - crect.top),
@@ -913,9 +921,15 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     };
 
     const sliceFlipEl = await detectSliceFlip();
-    if (sliceFlipEl) elements.push(sliceFlipEl);
-
-    for (const child of Array.from(container.children)) walk(child);
+    let sliceFlipPushed = false;
+    for (const child of Array.from(container.children)) {
+      if (sliceFlipEl && !sliceFlipPushed && child === sliceFlipAncestor) {
+        elements.push(sliceFlipEl);
+        sliceFlipPushed = true;
+      }
+      walk(child);
+    }
+    if (sliceFlipEl && !sliceFlipPushed) elements.push(sliceFlipEl);
 
     project.assets = assets;
     project.elements = elements;
