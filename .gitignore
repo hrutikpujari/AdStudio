@@ -3,5 +3,8 @@ dist
 dist-smoke
 scripts/smoke.mjs
 *.local
+.vercel
 .DS_Store
 tsconfig.tsbuildinfo
+
+.vercel
