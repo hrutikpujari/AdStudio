@@ -404,7 +404,10 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
 
     try {
       const r = node.getBoundingClientRect();
-      if (r.width >= 4 && r.height >= 4) {
+      // images can be legitimately slivers (e.g. a 2.5px-wide terms strip);
+      // other tags keep the 4px floor to filter decorative noise
+      const minDim = node.tagName === 'IMG' ? 2 : 4;
+      if (r.width >= minDim && r.height >= minDim) {
         const tm = /matrix\(([^)]+)\)/.exec(style.transform);
         let rotation = 0;
         let x = Math.round(r.left - crect.left);

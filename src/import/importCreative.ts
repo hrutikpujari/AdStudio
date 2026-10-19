@@ -767,7 +767,10 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
         // a 0-size box just means "don't emit" — children may still
         // be measurable (absolutely-positioned subtrees collapse
         // their static parent's box to zero)
-        if (r.width >= 4 && r.height >= 4) {
+        // images can be legitimately slivers (e.g. a 2.5px-wide terms
+        // strip); other tags keep the 4px floor to filter noise
+        const minDim = node.tagName === 'IMG' ? 2 : 4;
+        if (r.width >= minDim && r.height >= minDim) {
         // recover rotation: measure the un-transformed box, then
         // center it on the transformed bounding box
         const tm = /matrix\(([^)]+)\)/.exec(style.transform);
