@@ -318,7 +318,7 @@ input[type='range'] { accent-color: var(--accent); }
 .ce.selectable { cursor: move; }
 .ce.selected { outline: 1.5px solid var(--accent); outline-offset: 0; z-index: 999; }
 .ce.locked { cursor: not-allowed; }
-.ce.hidden-el { opacity: 0.25; }
+.ce.hidden-el { display: none; }
 
 .rh {
   position: absolute;
