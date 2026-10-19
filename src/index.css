@@ -185,6 +185,10 @@ input[type='range'] { accent-color: var(--accent); }
   min-height: 0;
 }
 .panel-section.grow { flex: 1; }
+/* keep every section reachable: cap Elements (the longest) so Assets
+   and Layers always get a usable share of the left panel */
+.panel-left .panel-section:first-child { flex: 0 1 auto; max-height: 46%; }
+.panel-left .panel-section.grow { flex: 1 1 0; min-height: 96px; }
 .panel-head {
   display: flex;
   align-items: center;
@@ -585,17 +589,6 @@ input[type='range'] { accent-color: var(--accent); }
     visibility: visible;
     transform: none;
     transition: transform 0.18s ease, visibility 0s;
-  }
-
-  /* cap the Elements section so Assets and Layers stay visible —
-     its chip grid scrolls internally instead of eating the drawer */
-  .panel-left .panel-section:first-child {
-    flex: 0 1 auto;
-    max-height: 46%;
-  }
-  .panel-left .panel-section.grow {
-    flex: 1 1 0;
-    min-height: 90px;
   }
 
   .drawer-backdrop {
