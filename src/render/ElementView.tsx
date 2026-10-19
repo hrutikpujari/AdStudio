@@ -18,7 +18,7 @@ import type { CSSProperties } from 'react';
  * Live animation runs in the preview iframe, which renders the exported HTML.
  */
 
-function SlideThumb({ slide, assets, accent, fit = 'cover', cardWPct, slideH }: { slide: SlideConfig; assets: AssetRef[]; accent: string; fit?: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down'; cardWPct?: number; slideH?: number }) {
+function SlideThumb({ slide, assets, accent, fit = 'cover', cardWPct, slideH, cardStyle }: { slide: SlideConfig; assets: AssetRef[]; accent: string; fit?: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down'; cardWPct?: number; slideH?: number; cardStyle?: CarouselElement['config'] }) {
   const src = slide.assetId ? assets.find((a) => a.id === slide.assetId)?.src : '';
   const card = cardWPct != null && (slide.title || slide.price || slide.ctaLabel);
   if (src && !card) {
@@ -26,21 +26,22 @@ function SlideThumb({ slide, assets, accent, fit = 'cover', cardWPct, slideH }: 
   }
   if (card) {
     const fs = Math.max(7, (slideH ?? 200) * 0.055);
+    const cs: Partial<CarouselElement['config']> = cardStyle ?? {};
     return (
-      <div style={{ width: `${cardWPct}%`, height: '100%', margin: '0 auto', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: fs * 0.6, boxShadow: '0 2px 8px rgba(0,0,0,.1)', fontSize: fs }}>
+      <div dir={cs.cardDir} style={{ width: `${cardWPct}%`, height: '100%', margin: '0 auto', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: fs * 0.6, boxShadow: '0 2px 8px rgba(0,0,0,.1)', fontSize: fs }}>
         <div style={{ height: '55%', overflow: 'hidden', flexShrink: 0 }}>
           {src
             ? <img src={src} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: fit, display: 'block' }} />
             : <div className="ce-ph" style={{ borderColor: accent, color: accent, height: '100%' }}><span>IMAGE</span></div>}
         </div>
-        <div style={{ flex: 1, padding: '4% 6%', display: 'flex', flexDirection: 'column', minHeight: 0, fontFamily: 'Arial, sans-serif', color: '#222' }}>
+        <div style={{ flex: 1, padding: '4% 6%', display: 'flex', flexDirection: 'column', minHeight: 0, fontFamily: cs.cardFontFamily ?? 'Arial, sans-serif', color: cs.cardTitleColor ?? '#222' }}>
           <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{slide.title}</div>
-          <div style={{ fontWeight: 700, fontSize: '1.15em', color: '#c73a1d', marginTop: '0.15em', display: 'flex', gap: '0.4em' }}>
-            {slide.oldPrice ? <span style={{ color: '#999', textDecoration: 'line-through' }}>{slide.oldPrice}</span> : null}
+          <div style={{ fontWeight: 700, fontSize: '1.15em', color: cs.cardPriceColor ?? '#c73a1d', marginTop: '0.15em', display: 'flex', gap: '0.4em' }}>
+            {slide.oldPrice ? <span style={{ color: cs.cardOldPriceColor ?? '#999', textDecoration: 'line-through' }}>{slide.oldPrice}</span> : null}
             <span>{slide.price}</span>
           </div>
           {slide.ctaLabel
-            ? <div style={{ marginTop: 'auto', background: '#333', color: '#fff', borderRadius: 3, textAlign: 'center', fontWeight: 700, fontSize: '0.9em', padding: '0.35em 0' }}>{slide.ctaLabel}</div>
+            ? <div style={{ marginTop: 'auto', background: cs.cardCtaBg ?? '#333', color: cs.cardCtaColor ?? '#fff', borderRadius: 3, textAlign: 'center', fontWeight: 700, fontSize: '0.9em', padding: '0.35em 0' }}>{slide.ctaLabel}</div>
             : null}
         </div>
       </div>
@@ -72,7 +73,7 @@ function CarouselView({ el, assets }: { el: CarouselElement; assets: AssetRef[] 
         transform: `translate(calc(-50% ${dir > 0 ? '+' : '-'} ${sx}%), -50%) scale(${ss})`,
         opacity: cardMode ? 0 : 0.5, filter: stage ? 'brightness(.45) saturate(.5)' : undefined, zIndex: 2,
       }}>
-        <SlideThumb slide={slides[idx]} assets={assets} accent="#b3e0ff" fit={c.slideFit} cardWPct={cardWPct} slideH={slideH} />
+        <SlideThumb slide={slides[idx]} assets={assets} accent="#b3e0ff" fit={c.slideFit} cardWPct={cardWPct} slideH={slideH} cardStyle={c} />
       </div>
     );
   return (
@@ -83,7 +84,7 @@ function CarouselView({ el, assets }: { el: CarouselElement; assets: AssetRef[] 
         position: 'absolute', top: '50%', left: '50%', width: `${sw}%`, height: `${sh}%`,
         transform: 'translate(-50%, -50%)', zIndex: 3, boxShadow: '0 2px 10px rgba(0,0,0,.18)',
       }}>
-        {slides[0] ? <SlideThumb slide={slides[0]} assets={assets} accent="#b3e0ff" fit={c.slideFit} cardWPct={cardWPct} slideH={slideH} /> : null}
+        {slides[0] ? <SlideThumb slide={slides[0]} assets={assets} accent="#b3e0ff" fit={c.slideFit} cardWPct={cardWPct} slideH={slideH} cardStyle={c} /> : null}
       </div>
     </div>
   );

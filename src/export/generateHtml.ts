@@ -58,7 +58,7 @@ function cardInner(ctx: Ctx, s: SlideConfig, el: CarouselElement, c: CarouselEle
     ? `<img src="${esc(src)}" alt="${esc(s.title)}" class="cr-card-img" draggable="false"/>`
     : `<div class="cr-card-ph"></div>`;
   return (
-    `<div class="cr-card" style="font-size:${fs}px">` +
+    `<div class="cr-card" style="font-size:${fs}px"${c.cardDir ? ` dir="${c.cardDir}"` : ''}>` +
     `<div class="cr-card-media">${img}</div>` +
     `<div class="cr-card-body">` +
     `<div class="cr-card-title">${esc(s.title)}</div>` +
@@ -187,11 +187,11 @@ function genCarousel(ctx: Ctx, el: CarouselElement, z: number): ComponentOut {
 #css-${el.id} .cr-card-media{height:55%;flex-shrink:0;overflow:hidden}
 #css-${el.id} .cr-card-img{width:100%;height:100%;object-fit:${c.slideFit ?? 'cover'};display:block}
 #css-${el.id} .cr-card-ph{width:100%;height:100%;background:#f0f0f0}
-#css-${el.id} .cr-card-body{flex:1;min-height:0;padding:.4em .6em;display:flex;flex-direction:column;font-family:Arial,sans-serif;color:#222}
+#css-${el.id} .cr-card-body{flex:1;min-height:0;padding:.4em .6em;display:flex;flex-direction:column;font-family:${c.cardFontFamily ?? 'Arial,sans-serif'};color:${c.cardTitleColor ?? '#222'}}
 #css-${el.id} .cr-card-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#css-${el.id} .cr-card-price{font-weight:700;font-size:1.15em;color:#c73a1d;margin-top:.15em;display:flex;gap:.4em}
-#css-${el.id} .cr-card-price s{color:#999;font-weight:400}
-#css-${el.id} .cr-card-cta{margin-top:auto;background:#333;color:#fff;border-radius:.25em;text-align:center;font-weight:700;font-size:.9em;padding:.35em 0}` : ''}`;
+#css-${el.id} .cr-card-price{font-weight:700;font-size:1.15em;color:${c.cardPriceColor ?? '#c73a1d'};margin-top:.15em;display:flex;gap:.4em}
+#css-${el.id} .cr-card-price s{color:${c.cardOldPriceColor ?? '#999'};font-weight:400}
+#css-${el.id} .cr-card-cta{margin-top:auto;background:${c.cardCtaBg ?? '#333'};color:${c.cardCtaColor ?? '#fff'};border-radius:.25em;text-align:center;font-weight:700;font-size:.9em;padding:.35em 0}` : ''}`;
   const runtime = `(function(){
  var wrap=document.querySelector('#css-${el.id} .cr-wrap');if(!wrap)return;
  var slides=Array.prototype.slice.call(wrap.querySelectorAll('.cr-item'));
@@ -524,6 +524,7 @@ export function generateHtml(
 <meta name="ad.size" content="width=${W},height=${H}"/>
 <title>${esc(project.name)}</title>
 <style>
+${project.fontCss ?? ''}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#F2F0F0;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:Arial,sans-serif}
 .ad-container{width:${W}px;height:${H}px;${bgStyle};overflow:hidden;position:relative;cursor:pointer}

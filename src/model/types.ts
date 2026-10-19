@@ -108,6 +108,15 @@ export interface CarouselConfig {
   /** card width as % of the slide box (e.g. 90 for a 90%-wide card
    *  centered inside a full-bleed slide); undefined = 90 */
   cardWPct?: number;
+  /** card typography captured from the source creative's computed
+   *  styles (card layout only); undefined = built-in defaults */
+  cardFontFamily?: string;
+  cardDir?: 'ltr' | 'rtl';
+  cardTitleColor?: string;
+  cardPriceColor?: string;
+  cardOldPriceColor?: string;
+  cardCtaBg?: string;
+  cardCtaColor?: string;
 }
 
 export interface CardStackConfig {
@@ -296,6 +305,10 @@ export interface CreativeProject {
   /** z-order: index 0 = bottom, last = top */
   elements: AdElement[];
   assets: AssetRef[];
+  /** @font-face rules harvested from an imported creative's CSS —
+   *  remote URLs kept verbatim; local files rewritten to data URLs.
+   *  Emitted into exports so imported webfonts still render. */
+  fontCss?: string;
   /** global click-through; element-level urls take precedence */
   clickTag: string;
   createdAt: number;

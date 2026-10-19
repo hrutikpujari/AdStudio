@@ -108,12 +108,11 @@ async function inlineAssets(src: Source): Promise<{ map: Map<string, string>; cs
     const bytes = await src.getBytes(p);
     if (!bytes) continue;
     let body = rewritePathLiterals(new TextDecoder().decode(bytes), map);
-    // measurement must never depend on live network access — a remote
-    // @font-face (e.g. Google Fonts) can stall/slow the probe's render
-    // in a sandboxed iframe with no connectivity guarantee. Fonts don't
-    // affect any geometry we track (px-sized boxes), so strip them here;
-    // the real exported HTML is generated independently and never
-    // carries this raw CSS forward.
+    // @font-face rules are captured separately onto project.fontCss by
+    // importHtml — the measurement doc itself must never depend on live
+    // network access: a remote @font-face (e.g. Google Fonts) can stall
+    // the probe's render in a sandboxed iframe. Fonts don't affect any
+    // geometry we track (px-sized boxes), so strip them here.
     if (/\.css$/i.test(p)) body = body.replace(/@font-face\s*\{[^}]*\}/gi, '');
     if (/\.css$/i.test(p)) cssParts.push(body);
     map.set(p, `data:${/\.css$/i.test(p) ? 'text/css' : 'text/javascript'};base64,${b64Text(body)}`);
@@ -385,6 +384,27 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     el.setAttribute('style', await rewriteUrls(el.getAttribute('style') ?? ''));
   }
 
+  // harvest @font-face rules for the OUTPUT project — the probe doc
+  // strips them to avoid network stalls, but the exported creative and
+  // the editor canvas still need the webfont to render imported text
+  // (card titles/prices etc.) with the source typography. Local font
+  // urls are already data URLs via rewriteUrls/inlineAssets; remote
+  // (e.g. Google Fonts) urls pass through verbatim.
+  const fontParts = new Set<string>();
+  const harvestFonts = (css: string) => {
+    for (const ff of css.match(/@font-face\s*\{[^}]*\}/gi) ?? []) fontParts.add(ff);
+  };
+  for (const st of Array.from(doc.querySelectorAll('style'))) {
+    harvestFonts(st.textContent ?? '');
+  }
+  for (const p of src.candidates()) {
+    if (!/\.css$/i.test(p)) continue;
+    const bytes = await src.getBytes(p);
+    if (!bytes) continue;
+    harvestFonts(await rewriteUrls(new TextDecoder().decode(bytes)));
+  }
+  if (fontParts.size) project.fontCss = [...fontParts].join('\n');
+
   // map a src string (data URL / http) emitted by the probe to an
   // asset id, registering it if unseen
   const srcToAssetId = (s: string | undefined): string | undefined => {
@@ -644,8 +664,8 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       // extract it so the card layout survives reconstruction
       const squish = (s: string) => s.replace(/\s+/g, ' ').trim();
       const slideMeta = kids.map((k) => {
-        const pick = (sel: string) => squish(k.querySelector(sel)?.textContent ?? '');
-        const title = pick('h1,h2,h3,h4,h5,[class*="title" i],[class*="name" i]');
+        const titleEl = k.querySelector('h1,h2,h3,h4,h5,[class*="title" i],[class*="name" i]');
+        const title = squish(titleEl?.textContent ?? '');
         let price = '', oldPrice = '';
         const priceEl = k.querySelector(
           '[class*="subtitle" i],[class*="price" i],[class*="amount" i],[class*="cost" i]',
@@ -674,12 +694,18 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
             '';
         }
         if (url && !/^https?:/i.test(url)) url = '';
-        return { title, price, oldPrice, ctaLabel, url };
+        return { title, price, oldPrice, ctaLabel, url, titleEl, priceEl, ctaEl };
       });
       const cardish = slideMeta.filter((m) => m.title || m.price).length >= 2;
       let cardWPct: number | undefined;
+      let cardCss: {
+        cardFontFamily?: string; cardDir?: 'ltr' | 'rtl';
+        cardTitleColor?: string; cardPriceColor?: string;
+        cardOldPriceColor?: string; cardCtaBg?: string; cardCtaColor?: string;
+      } | undefined;
       if (cardish) {
         const ki = slideMeta.findIndex((m) => m.title || m.price);
+        const sm = slideMeta[ki];
         const inner = kids[ki]?.querySelector('[class*="card" i],[class*="content" i]')
           ?? kids[ki]?.firstElementChild;
         if (inner && kids[ki]) {
@@ -689,6 +715,27 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
             cardWPct = Math.min(98, Math.max(20, Math.round((ir.width / kr.width) * 100)));
           }
         }
+        // capture the card's typography so title/price/CTA keep the
+        // source font, direction and colors instead of our defaults
+        const col = (v: string) => (v ? rgbToHex(v) ?? v : '');
+        const tcs = sm.titleEl ? iwin.getComputedStyle(sm.titleEl) : null;
+        const pcs = sm.priceEl ? iwin.getComputedStyle(sm.priceEl) : null;
+        const ccs = sm.ctaEl ? iwin.getComputedStyle(sm.ctaEl) : null;
+        const opEl = sm.priceEl?.querySelector('s,strike,del,[style*="line-through" i]');
+        cardCss = {};
+        const ff = (tcs?.fontFamily || pcs?.fontFamily || ccs?.fontFamily || '').trim();
+        if (ff) cardCss.cardFontFamily = ff.slice(0, 200);
+        if (sm.titleEl?.getAttribute('dir') === 'rtl' || tcs?.direction === 'rtl') cardCss.cardDir = 'rtl';
+        const tc = tcs ? col(tcs.color) : '';
+        const pc = pcs ? col(pcs.color) : '';
+        const oc = opEl ? col(iwin.getComputedStyle(opEl).color) : '';
+        const cbg = ccs ? col(ccs.backgroundColor) : '';
+        const cc = ccs ? col(ccs.color) : '';
+        if (tc) cardCss.cardTitleColor = tc;
+        if (pc) cardCss.cardPriceColor = pc;
+        if (oc) cardCss.cardOldPriceColor = oc;
+        if (cbg && cbg !== 'transparent') cardCss.cardCtaBg = cbg;
+        if (cc) cardCss.cardCtaColor = cc;
       }
 
       const slides: SlideConfig[] = kids.map((_, i) => ({
@@ -782,6 +829,7 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
           variant,
           ...(cardish ? { slideLayout: 'card' as const } : {}),
           ...(cardWPct != null ? { cardWPct } : {}),
+          ...(cardCss ?? {}),
         },
       };
     };

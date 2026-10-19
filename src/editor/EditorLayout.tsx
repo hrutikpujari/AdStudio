@@ -46,6 +46,18 @@ export function EditorLayout() {
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const playStartRef = useRef(0);
 
+  /* inject imported webfonts (project.fontCss carries @font-face rules
+     harvested from the source creative) so canvas text matches export */
+  useEffect(() => {
+    let st = document.getElementById('aps-proj-fonts') as HTMLStyleElement | null;
+    if (!st) {
+      st = document.createElement('style');
+      st.id = 'aps-proj-fonts';
+      document.head.appendChild(st);
+    }
+    st.textContent = project.fontCss ?? '';
+  }, [project.fontCss]);
+
   /* -------- fit zoom -------- */
   const fitZoom = useCallback(() => {
     const el = canvasRef.current;

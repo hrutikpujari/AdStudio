@@ -227,8 +227,8 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
     // extract it so the card layout survives reconstruction
     const squish = (s: string) => s.replace(/\s+/g, ' ').trim();
     const slideMeta = kids.map((k) => {
-      const pick = (sel: string) => squish(k.querySelector(sel)?.textContent ?? '');
-      const title = pick('h1,h2,h3,h4,h5,[class*="title" i],[class*="name" i]');
+      const titleEl = k.querySelector('h1,h2,h3,h4,h5,[class*="title" i],[class*="name" i]');
+      const title = squish(titleEl?.textContent ?? '');
       let price = '', oldPrice = '';
       const priceEl = k.querySelector(
         '[class*="subtitle" i],[class*="price" i],[class*="amount" i],[class*="cost" i]',
@@ -257,14 +257,16 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
           '';
       }
       if (url && !/^https?:/i.test(url)) url = '';
-      return { title, price, oldPrice, ctaLabel, url };
+      return { title, price, oldPrice, ctaLabel, url, titleEl, priceEl, ctaEl };
     });
     const cardish = slideMeta.filter((m) => m.title || m.price).length >= 2;
     // card width vs slide width (e.g. a 90%-wide card centered in a
     // full-bleed slide) — measured from the largest card-like child
     let cardWPct: number | undefined;
+    let cardCss: Record<string, string> | undefined;
     if (cardish) {
       const ki = slideMeta.findIndex((m) => m.title || m.price);
+      const sm = slideMeta[ki];
       const inner = kids[ki]?.querySelector('[class*="card" i],[class*="content" i]')
         ?? kids[ki]?.firstElementChild;
       if (inner && kids[ki]) {
@@ -274,6 +276,27 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
           cardWPct = Math.min(98, Math.max(20, Math.round((ir.width / kr.width) * 100)));
         }
       }
+      // capture the card's typography so title/price/CTA keep the
+      // source font, direction and colors instead of our defaults
+      const col = (v: string) => (v ? rgbToHex(v) ?? v : '');
+      const tcs = sm.titleEl ? W.getComputedStyle(sm.titleEl) : null;
+      const pcs = sm.priceEl ? W.getComputedStyle(sm.priceEl) : null;
+      const ccs = sm.ctaEl ? W.getComputedStyle(sm.ctaEl) : null;
+      const opEl = sm.priceEl?.querySelector('s,strike,del,[style*="line-through" i]');
+      cardCss = {};
+      const ff = (tcs?.fontFamily || pcs?.fontFamily || ccs?.fontFamily || '').trim();
+      if (ff) cardCss.cardFontFamily = ff.slice(0, 200);
+      if (sm.titleEl?.getAttribute('dir') === 'rtl' || tcs?.direction === 'rtl') cardCss.cardDir = 'rtl';
+      const tc = tcs ? col(tcs.color) : '';
+      const pc = pcs ? col(pcs.color) : '';
+      const oc = opEl ? col(W.getComputedStyle(opEl).color) : '';
+      const cbg = ccs ? col(ccs.backgroundColor) : '';
+      const cc = ccs ? col(ccs.color) : '';
+      if (tc) cardCss.cardTitleColor = tc;
+      if (pc) cardCss.cardPriceColor = pc;
+      if (oc) cardCss.cardOldPriceColor = oc;
+      if (cbg && cbg !== 'transparent') cardCss.cardCtaBg = cbg;
+      if (cc) cardCss.cardCtaColor = cc;
     }
 
     const slides = kids.map((_, i) => ({
@@ -405,6 +428,7 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
         ...(slideFit && slideFit !== 'cover' ? { slideFit } : {}),
         ...(cardish ? { slideLayout: 'card' } : {}),
         ...(cardWPct != null ? { cardWPct } : {}),
+        ...(cardCss ?? {}),
         ...(geom.slideWPct != null ? geom : {}),
       },
     };

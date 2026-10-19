@@ -109,6 +109,13 @@ const elementSchema = z.discriminatedUnion('type', [
       slideFit: z.enum(['fill', 'contain', 'cover', 'none', 'scale-down']).optional(),
       slideLayout: z.enum(['plain', 'card']).optional(),
       cardWPct: z.number().min(20).max(100).optional(),
+      cardFontFamily: z.string().max(200).optional(),
+      cardDir: z.enum(['ltr', 'rtl']).optional(),
+      cardTitleColor: z.string().max(60).optional(),
+      cardPriceColor: z.string().max(60).optional(),
+      cardOldPriceColor: z.string().max(60).optional(),
+      cardCtaBg: z.string().max(60).optional(),
+      cardCtaColor: z.string().max(60).optional(),
     }),
   }),
   z.object({
@@ -197,6 +204,7 @@ export const projectSchema = z.object({
     }),
   ).max(200),
   clickTag: z.string().max(2000),
+  fontCss: z.string().max(200_000).optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
