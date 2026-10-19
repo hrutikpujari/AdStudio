@@ -4,6 +4,7 @@ import { useUi } from '../store/uiStore';
 import type { CreativeProject } from '../model/types';
 import { TopToolbar } from './TopToolbar';
 import { ElementsPanel } from './ElementsPanel';
+import { AssetsPanel } from './AssetsPanel';
 import { LayersPanel } from './LayersPanel';
 import { Artboard } from './Artboard';
 import { PropertiesPanel } from './PropertiesPanel';
@@ -13,7 +14,7 @@ import { NewProjectDialog } from './NewProjectDialog';
 import { AiPanel } from './AiPanel';
 import { validateForExport, type ValidationIssue } from '../export/validate';
 import { buildCreativeZip, downloadBlob } from '../export/exportZip';
-import { CheckCircle2, Film, Shapes, SlidersHorizontal, X } from 'lucide-react';
+import { CheckCircle2, Film, Image as ImageIcon, Layers, Shapes, SlidersHorizontal, X } from 'lucide-react';
 
 export function EditorLayout() {
   const project = useEditor((s) => s.project);
@@ -41,6 +42,8 @@ export function EditorLayout() {
   const [aiPreview, setAiPreview] = useState<CreativeProject | null>(null);
   const [exporting, setExporting] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<'elements' | 'props' | 'timeline' | null>(null);
+  const [dockTab, setDockTab] = useState<'elements' | 'layers' | 'assets'>('elements');
+  const [dockCollapsed, setDockCollapsed] = useState(false);
   const playStartRef = useRef(0);
 
   /* -------- fit zoom -------- */
@@ -180,8 +183,14 @@ export function EditorLayout() {
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedId, project.elements, undo, redo, save, removeElement, duplicateElement, updateElement, previewOpen, closePreview, toast]);
 
+  const dockTabs = [
+    { id: 'elements' as const, label: 'Elements', icon: <Shapes size={17} /> },
+    { id: 'layers' as const, label: 'Layers', icon: <Layers size={17} /> },
+    { id: 'assets' as const, label: 'Assets', icon: <ImageIcon size={17} /> },
+  ];
+
   return (
-    <div className="editor">
+    <div className={`editor${dockCollapsed ? ' dock-collapsed' : ''}`}>
       <TopToolbar
         zoom={zoom}
         onZoom={onZoom}
@@ -204,8 +213,26 @@ export function EditorLayout() {
           if ((e.target as HTMLElement).closest('.el-chip, .asset-thumb')) setMobilePanel(null);
         }}
       >
-        <ElementsPanel />
-        <LayersPanel />
+        <div className="rail">
+          {dockTabs.map((t) => (
+            <button
+              key={t.id}
+              className={`rail-btn${dockTab === t.id && !dockCollapsed ? ' active' : ''}`}
+              title={t.label}
+              onClick={() => {
+                if (dockTab === t.id) setDockCollapsed((c) => !c);
+                else { setDockTab(t.id); setDockCollapsed(false); }
+              }}
+            >
+              {t.icon}
+            </button>
+          ))}
+        </div>
+        <div className="panel-content">
+          {dockTab === 'elements' && <ElementsPanel />}
+          {dockTab === 'layers' && <LayersPanel />}
+          {dockTab === 'assets' && <AssetsPanel />}
+        </div>
       </div>
 
       <div className="canvas-area" ref={canvasRef}>
