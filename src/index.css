@@ -587,6 +587,17 @@ input[type='range'] { accent-color: var(--accent); }
     transition: transform 0.18s ease, visibility 0s;
   }
 
+  /* cap the Elements section so Assets and Layers stay visible —
+     its chip grid scrolls internally instead of eating the drawer */
+  .panel-left .panel-section:first-child {
+    flex: 0 1 auto;
+    max-height: 46%;
+  }
+  .panel-left .panel-section.grow {
+    flex: 1 1 0;
+    min-height: 90px;
+  }
+
   .drawer-backdrop {
     display: block;
     position: fixed;
@@ -647,4 +658,6 @@ input[type='range'] { accent-color: var(--accent); }
 .touch-only { display: none; }
 @media (pointer: coarse) {
   .layer-row .icon-btn.touch-only { display: inline-flex; opacity: 1; }
+  /* no hover on touch — always show the asset delete affordance */
+  .asset-thumb .del { display: flex; }
 }
