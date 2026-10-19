@@ -60,15 +60,18 @@ export function Artboard({ zoom }: { zoom: number }) {
       select(null);
       return;
     }
-    // click-through: if topmost is already selected, cycle to the one beneath
-    let target = hits[0];
-    if (hits.length > 1 && hits[0] === selectedId) {
-      const idx = hits.indexOf(selectedId);
-      target = hits[(idx + 1) % hits.length];
-    }
+    // Always act on the topmost element. The click-through cycle only
+    // applies on a clean click — see `up` below — so a press on an
+    // already-selected element starts a drag, not a re-selection of
+    // whatever sits under it.
+    const target = hits[0];
+    const wasSelected = target === selectedId;
     const el = project.elements.find((x) => x.id === target)!;
-    select(target);
-    if (el.locked) return;
+    if (!wasSelected) select(target);
+    if (el.locked) {
+      if (wasSelected && hits.length > 1) select(hits[1 % hits.length]);
+      return;
+    }
 
     // drag-to-move, driven from the artboard so overlapping elements
     // can't steal the gesture
@@ -77,18 +80,26 @@ export function Artboard({ zoom }: { zoom: number }) {
     const startY = p.y;
     const origX = el.x;
     const origY = el.y;
+    let moved = false;
     const move = (ev: globalThis.PointerEvent) => {
       const cur = toArtboard(ev.clientX, ev.clientY);
-      let nx = origX + (cur.x - startX);
-      let ny = origY + (cur.y - startY);
-      nx = Math.min(Math.max(nx, -el.width * 0.25), AW - el.width * 0.25);
-      ny = Math.min(Math.max(ny, -el.height * 0.25), AH - el.height * 0.25);
+      const dx = cur.x - startX;
+      const dy = cur.y - startY;
+      // <3px of screen movement is a sloppy click, not a drag —
+      // don't nudge the element and keep the cycle-on-release alive
+      if (!moved && Math.hypot(dx * zoom, dy * zoom) < 3) return;
+      moved = true;
+      const nx = Math.min(Math.max(origX + dx, -el.width * 0.25), AW - el.width * 0.25);
+      const ny = Math.min(Math.max(origY + dy, -el.height * 0.25), AH - el.height * 0.25);
       updateElement(el.id, { x: Math.round(nx), y: Math.round(ny) });
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       endGesture();
+      // clean click on an already-selected element → cycle selection
+      // to the element beneath it
+      if (!moved && wasSelected && hits.length > 1) select(hits[1 % hits.length]);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
