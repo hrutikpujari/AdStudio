@@ -118,6 +118,33 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       ? (rgbToHex(bgRaw) ?? bgRaw)
       : undefined;
 
+  /* multi-screen creatives: a horizontal track of container-sized panes
+     slid across by JS (e.g. .screens-wrapper{translateX(-300px)}).
+     Elements inside later panes measure off-canvas, so coordinates are
+     normalized into the owning pane's space. The LAST pane is the
+     settled end state — earlier panes import as hidden layers. */
+  const panes: Element[] = (() => {
+    for (const w of Array.from(container.querySelectorAll('*'))) {
+      const wr = w.getBoundingClientRect();
+      if (wr.width < crect.width * 1.5 || wr.height < crect.height * 0.7) continue;
+      const kids = Array.from(w.children).filter((k) => {
+        const kr = k.getBoundingClientRect();
+        return kr.width >= crect.width * 0.9 && kr.height >= crect.height * 0.7;
+      });
+      if (kids.length >= 2) return kids;
+    }
+    return [];
+  })();
+  const paneOf = (n: Element): Element | null =>
+    panes.find((p) => p === n || p.contains(n)) ?? null;
+  const lastPane = panes[panes.length - 1] ?? null;
+  /** container-space origin for a node: its screen pane when inside one */
+  const frameLeft = (n: Element) => (paneOf(n) ?? container).getBoundingClientRect().left;
+  const inEarlyPane = (n: Element) => {
+    const p = paneOf(n);
+    return p != null && p !== lastPane;
+  };
+
   /* a container can be authored height:100% of an auto-height
      positioned ancestor — CSS resolves it to 0 and the box collapses
      even though its image content still renders. Fall back to the
@@ -143,6 +170,8 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
   // On live DOM the JS-assigned state classes are present, so the
   // currently-"center" slide is measured directly.
   const detectSlideGroup = (node: Element): Record<string, unknown> | null => {
+    // measure in the owning screen-pane's space (crect otherwise)
+    const frame = paneOf(node)?.getBoundingClientRect() ?? crect;
     const kids = Array.from(node.children) as HTMLElement[];
     if (kids.length < 3) return null;
 
@@ -274,10 +303,10 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
     let ci = -1;
     rects.forEach((r, i) => {
       if (r.width >= 4 && r.height >= 4 && opas[i] > 0.05 &&
-        r.left < crect.right && r.right > crect.left &&
-        r.top < crect.bottom && r.bottom > crect.top) {
-        const a = Math.min(r.right, crect.right) - Math.max(r.left, crect.left);
-        const b = Math.min(r.bottom, crect.bottom) - Math.max(r.top, crect.top);
+        r.left < frame.right && r.right > frame.left &&
+        r.top < frame.bottom && r.bottom > frame.top) {
+        const a = Math.min(r.right, frame.right) - Math.max(r.left, frame.left);
+        const b = Math.min(r.bottom, frame.bottom) - Math.max(r.top, frame.top);
         if (a * b > bestArea) { bestArea = a * b; ci = i; }
       }
     });
@@ -287,10 +316,10 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       const cc = rects[ci];
       const cx = (cc.left + cc.right) / 2;
       const cy = (cc.top + cc.bottom) / 2;
-      const L = Math.max(crect.left, Math.min(...vis.map((r) => r.left)));
-      const T = Math.max(crect.top, Math.min(...vis.map((r) => r.top)));
-      const R = Math.min(crect.right, Math.max(...vis.map((r) => r.right)));
-      const B = Math.min(crect.bottom, Math.max(...vis.map((r) => r.bottom)));
+      const L = Math.max(frame.left, Math.min(...vis.map((r) => r.left)));
+      const T = Math.max(frame.top, Math.min(...vis.map((r) => r.top)));
+      const R = Math.min(frame.right, Math.max(...vis.map((r) => r.right)));
+      const B = Math.min(frame.bottom, Math.max(...vis.map((r) => r.bottom)));
       const hw = Math.max(cx - L, R - cx, natural[ci].width / 2);
       const hh = Math.max(cy - T, B - cy, natural[ci].height / 2);
       box = { left: cx - hw, top: cy - hh, width: hw * 2, height: hh * 2 };
@@ -338,10 +367,10 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       const top = Math.min(...valid.map((r) => r.top));
       const right = Math.max(...valid.map((r) => r.left + r.width));
       const bottom = Math.max(...valid.map((r) => r.top + r.height));
-      const plausible = left < crect.right && right > crect.left && top < crect.bottom && bottom > crect.top;
+      const plausible = left < frame.right && right > frame.left && top < frame.bottom && bottom > frame.top;
       box = plausible
         ? { left, top, width: right - left, height: bottom - top }
-        : { left: crect.left + crect.width * 0.15, top: crect.top + crect.height * 0.3, width: crect.width * 0.7, height: crect.height * 0.45 };
+        : { left: frame.left + frame.width * 0.15, top: frame.top + frame.height * 0.3, width: frame.width * 0.7, height: frame.height * 0.45 };
     }
 
     const stageLike = common.some((c) =>
@@ -365,9 +394,9 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
 
     return {
       id: uid(), type: 'carousel', name: 'Carousel',
-      x: Math.round(box.left - crect.left), y: Math.round(box.top - crect.top),
+      x: Math.round(box.left - frame.left), y: Math.round(box.top - frame.top),
       width: Math.round(box.width), height: Math.round(box.height),
-      rotation: 0, opacity: 1, visible: true, locked: false,
+      rotation: 0, opacity: 1, visible: !inEarlyPane(node), locked: false,
       animation: ANIM(),
       config: {
         slides, autoplay: true, intervalMs, transitionMs,
@@ -432,9 +461,9 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
     sliceFlipHost = host;
     return {
       id: uid(), type: 'slice-flip', name: 'Slice Flip',
-      x: Math.round(r.left - crect.left), y: Math.round(r.top - crect.top),
+      x: Math.round(r.left - frameLeft(host)), y: Math.round(r.top - crect.top),
       width: Math.max(10, Math.round(r.width)), height: Math.max(10, Math.round(r.height)),
-      rotation: 0, opacity: 1, visible: true, locked: false,
+      rotation: 0, opacity: 1, visible: !inEarlyPane(host), locked: false,
       animation: ANIM(),
       config: {
         slides,
@@ -477,7 +506,8 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       if (r.width >= minDim && r.height >= minDim) {
         const tm = /matrix\(([^)]+)\)/.exec(style.transform);
         let rotation = 0;
-        let x = Math.round(r.left - crect.left);
+        const paneX = frameLeft(node);
+        let x = Math.round(r.left - paneX);
         let y = Math.round(r.top - crect.top);
         let w = Math.round(r.width);
         let h = Math.round(r.height);
@@ -493,7 +523,7 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
             w = Math.round(r2.width * (Math.hypot(a, b) || 1));
             h = Math.round(r2.height * (Math.hypot(c, d) || 1));
             rotation = angle;
-            x = Math.round(r.left + r.width / 2 - crect.left - w / 2);
+            x = Math.round(r.left + r.width / 2 - paneX - w / 2);
             y = Math.round(r.top + r.height / 2 - crect.top - h / 2);
           }
         }
@@ -503,7 +533,7 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
         const base = {
           x, y, width: w, height: h, rotation,
           opacity: initiallyHidden ? 1 : Math.min(1, Math.max(0, parseFloat(style.opacity) || 1)),
-          visible: !initiallyHidden && !offCanvas,
+          visible: !initiallyHidden && !offCanvas && !inEarlyPane(node),
           locked: false,
           animation: ANIM(),
         };

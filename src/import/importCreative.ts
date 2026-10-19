@@ -264,7 +264,7 @@ async function runProbe(html: string, src: Source): Promise<ProbeResult | null> 
     `var __apsRun=function(){try{var r=(${apsProbe.toString()})(APS_CFG);` +
     `parent.postMessage({__aps:'result',r:r},'*');}` +
     `catch(e){parent.postMessage({__aps:'result',err:String(e&&e.message||e)},'*');}};\n` +
-    `setTimeout(__apsRun,1200);setTimeout(__apsRun,2600);`;
+    `setTimeout(__apsRun,1200);setTimeout(__apsRun,2600);setTimeout(__apsRun,4300);`;
   doc.body.appendChild(probe);
 
   const iframe = document.createElement('iframe');
@@ -275,17 +275,33 @@ async function runProbe(html: string, src: Source): Promise<ProbeResult | null> 
   try {
     let last: ProbeResult | null = null;
     let count = 0;
+    let lastSig = '';
+    let stable = false;
+    // position+visibility signature per element (uids are random per run,
+    // so identity is compared by measured geometry instead)
+    const sigOf = (r: ProbeResult) =>
+      (r.elements ?? [])
+        .map((e) => `${e.type}@${e.x},${e.y},${e.width},${e.height},${e.visible}`)
+        .join('|');
     const onMsg = (e: MessageEvent) => {
       if (e.source === iframe.contentWindow && e.data?.__aps === 'result' && e.data.r) {
-        last = e.data.r as ProbeResult;
+        const r = e.data.r as ProbeResult;
+        const s = sigOf(r);
+        // two consecutive identical snapshots = settled state
+        if (last && s === lastSig) stable = true;
+        lastSig = s;
+        last = r;
         count++;
       }
     };
     window.addEventListener('message', onMsg);
     iframe.srcdoc = '<!doctype html>' + doc.documentElement.outerHTML;
-    // take the latest snapshot: settle early if both arrived
-    const deadline = performance.now() + 4800;
-    while (performance.now() < deadline && count < 2) {
+    // take the latest snapshot: settle early once consecutive snapshots
+    // agree; keep waiting for the 3rd when the DOM is still changing
+    // (multi-screen creatives slide their main screen in around t≈3s)
+    const deadline = performance.now() + 5200;
+    while (performance.now() < deadline) {
+      if (count >= 3 || (stable && count >= 2)) break;
       await new Promise((r) => setTimeout(r, 120));
     }
     window.removeEventListener('message', onMsg);
@@ -503,6 +519,43 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     const allStyleText = Array.from(doc.querySelectorAll('style'))
       .map((s) => s.textContent ?? '').join('\n');
 
+    // JS-toggled "settled" states never fire with scripts stripped —
+    // statically add modifier classes whose rules change geometry
+    // (e.g. .screens-wrapper.show-screen2{transform:translateX(-300px)}),
+    // so off-canvas screens land where the creative ends up showing them
+    for (const mm of allStyleText.matchAll(/\.([a-zA-Z][\w-]*)\.([a-zA-Z][\w-]*)[^{}]*\{([^}]*)\}/g)) {
+      const [, baseCls, mod, body] = mm;
+      if (!/^(show|shown|active|is-active|is-on|on|open|in|visible|current)[\w-]*$/i.test(mod)) continue;
+      if (!/(transform|translate|left|right|top|bottom|display|visibility|opacity)\s*:/i.test(body)) continue;
+      idoc.querySelectorAll('.' + baseCls).forEach((n) => n.classList.add(mod));
+    }
+    void idoc.body.offsetHeight; // force reflow before measuring
+
+    // multi-screen creatives: a horizontal track of container-sized panes
+    // (e.g. .screens-wrapper > .screen*2). Coordinates normalize into the
+    // owning pane's space; earlier panes import hidden, last pane is the
+    // settled end state.
+    const panes: Element[] = (() => {
+      for (const w of Array.from(idoc.querySelectorAll('*'))) {
+        const wr = w.getBoundingClientRect();
+        if (wr.width < crect.width * 1.5 || wr.height < crect.height * 0.7) continue;
+        const kids = Array.from(w.children).filter((k) => {
+          const kr = k.getBoundingClientRect();
+          return kr.width >= crect.width * 0.9 && kr.height >= crect.height * 0.7;
+        });
+        if (kids.length >= 2) return kids;
+      }
+      return [];
+    })();
+    const paneOf = (n: Element): Element | null =>
+      panes.find((p) => p === n || p.contains(n)) ?? null;
+    const lastPane = panes[panes.length - 1] ?? null;
+    const frameLeft = (n: Element) => (paneOf(n) ?? container).getBoundingClientRect().left;
+    const inEarlyPane = (n: Element) => {
+      const p = paneOf(n);
+      return p != null && p !== lastPane;
+    };
+
     // register a (possibly remote/data) <img> src as an asset, reusing
     // whatever was already captured — shared by the plain IMG branch
     // and the carousel-slide detector below
@@ -558,6 +611,8 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     };
 
     const detectSlideGroup = (node: Element): CarouselElement | null => {
+      // measure in the owning screen-pane's space (crect otherwise)
+      const frame = paneOf(node)?.getBoundingClientRect() ?? crect;
       const kids = Array.from(node.children) as HTMLElement[];
       if (kids.length < 3) return null;
 
@@ -687,10 +742,10 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
         const top = Math.min(...valid.map((r) => r.top));
         const right = Math.max(...valid.map((r) => r.left + r.width));
         const bottom = Math.max(...valid.map((r) => r.top + r.height));
-        const plausible = left < crect.right && right > crect.left && top < crect.bottom && bottom > crect.top;
+        const plausible = left < frame.right && right > frame.left && top < frame.bottom && bottom > frame.top;
         box = plausible
           ? { left, top, width: right - left, height: bottom - top }
-          : { left: crect.left + crect.width * 0.15, top: crect.top + crect.height * 0.3, width: crect.width * 0.7, height: crect.height * 0.45 };
+          : { left: frame.left + frame.width * 0.15, top: frame.top + frame.height * 0.3, width: frame.width * 0.7, height: frame.height * 0.45 };
       }
 
       // stage variant dims non-center slides via filter — search the
@@ -717,9 +772,9 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
 
       return {
         id: uid(), type: 'carousel', name: 'Carousel',
-        x: Math.round(box.left - crect.left), y: Math.round(box.top - crect.top),
+        x: Math.round(box.left - frame.left), y: Math.round(box.top - frame.top),
         width: Math.round(box.width), height: Math.round(box.height),
-        rotation: 0, opacity: 1, visible: true, locked: false,
+        rotation: 0, opacity: 1, visible: !inEarlyPane(node), locked: false,
         animation: ANIM(),
         config: {
           slides, autoplay: true, intervalMs, transitionMs,
@@ -788,9 +843,9 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       sliceFlipHost = host;
       return {
         id: uid(), type: 'slice-flip', name: 'Slice Flip',
-        x: Math.round(r.left - crect.left), y: Math.round(r.top - crect.top),
+        x: Math.round(r.left - frameLeft(host)), y: Math.round(r.top - crect.top),
         width: Math.max(10, Math.round(r.width)), height: Math.max(10, Math.round(r.height)),
-        rotation: 0, opacity: 1, visible: true, locked: false,
+        rotation: 0, opacity: 1, visible: !inEarlyPane(host), locked: false,
         animation: ANIM(),
         config: {
           slides,
@@ -841,7 +896,8 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
         // center it on the transformed bounding box
         const tm = /matrix\(([^)]+)\)/.exec(style.transform);
         let rotation = 0;
-        let x = Math.round(r.left - crect.left);
+        const paneX = frameLeft(node);
+        let x = Math.round(r.left - paneX);
         let y = Math.round(r.top - crect.top);
         let w = Math.round(r.width);
         let h = Math.round(r.height);
@@ -857,7 +913,7 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
             w = Math.round(r2.width * (Math.hypot(a, b) || 1));
             h = Math.round(r2.height * (Math.hypot(c, d) || 1));
             rotation = angle;
-            x = Math.round(r.left + r.width / 2 - crect.left - w / 2);
+            x = Math.round(r.left + r.width / 2 - paneX - w / 2);
             y = Math.round(r.top + r.height / 2 - crect.top - h / 2);
           }
         }
@@ -867,7 +923,7 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
         const base = {
           x, y, width: w, height: h, rotation,
           opacity: initiallyHidden ? 1 : Math.min(1, Math.max(0, parseFloat(style.opacity) || 1)),
-          visible: !initiallyHidden && !offCanvas,
+          visible: !initiallyHidden && !offCanvas && !inEarlyPane(node),
           locked: false,
           animation: ANIM(),
         };
