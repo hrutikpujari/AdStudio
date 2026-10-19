@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
 import type { ElementType } from '../model/types';
-import { createElement } from '../model/defaults';
+import { createElement, createImageFromAsset } from '../model/defaults';
 import { useEditor } from '../store/projectStore';
 import { CanvasElement } from './CanvasElement';
+import { ASSET_DRAG_TYPE } from './AssetsPanel';
 
 /**
  * Artboard: centered, zoomable canvas. All pointer interaction
@@ -95,9 +96,27 @@ export function Artboard({ zoom }: { zoom: number }) {
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
+    const p = toArtboard(e.clientX, e.clientY);
+
+    const assetId = e.dataTransfer.getData(ASSET_DRAG_TYPE);
+    if (assetId) {
+      const asset = project.assets.find((a) => a.id === assetId);
+      if (!asset) return;
+      // dropped onto an image → swap its picture; anywhere else → new image
+      const hit = hitsAt(p.x, p.y)
+        .map((id) => project.elements.find((x) => x.id === id)!)
+        .find((x) => x.type === 'image' && !x.locked);
+      if (hit) {
+        updateElement(hit.id, { assetId } as any);
+        select(hit.id);
+      } else {
+        addElement(createImageFromAsset(asset, AW, AH, p));
+      }
+      return;
+    }
+
     const type = e.dataTransfer.getData('application/x-adpilot-element') as ElementType;
     if (!type) return;
-    const p = toArtboard(e.clientX, e.clientY);
     const el = createElement(type, AW, AH, { x: Math.round(p.x), y: Math.round(p.y) });
     // keep the new element inside the artboard
     el.x = Math.max(0, Math.min(el.x, AW - el.width));
@@ -115,7 +134,12 @@ export function Artboard({ zoom }: { zoom: number }) {
     : undefined;
 
   return (
-    <div className="artboard-wrap" onPointerDown={onPointerDown} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+    <div
+      className="artboard-wrap"
+      onPointerDown={onPointerDown}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+      onDrop={onDrop}
+    >
       <div
         ref={boardRef}
         className="artboard"

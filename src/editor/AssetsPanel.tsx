@@ -1,7 +1,10 @@
 import { useRef, useState } from 'react';
+import type { DragEvent } from 'react';
 import { Upload, X } from 'lucide-react';
-import { createElement } from '../model/defaults';
+import { createImageFromAsset } from '../model/defaults';
 import { useEditor } from '../store/projectStore';
+
+export const ASSET_DRAG_TYPE = 'application/x-adpilot-asset';
 
 const MAX_ASSET_BYTES = 2.5 * 1024 * 1024; // keep zips light
 const OK_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
@@ -47,16 +50,23 @@ export function AssetsPanel() {
     });
   };
 
-  const assignAsset = (assetId: string) => {
+  // Click: fill the selected image only if it's still an empty
+  // placeholder; otherwise always add a new image. (Replacing whatever
+  // image happened to be selected made repeat clicks look dead.)
+  const placeAsset = (assetId: string) => {
+    const asset = project.assets.find((a) => a.id === assetId);
+    if (!asset) return;
     const sel = project.elements.find((e) => e.id === selectedId);
-    if (sel?.type === 'image') {
+    if (sel?.type === 'image' && !sel.assetId && !sel.locked) {
       updateElement(sel.id, { assetId } as any);
-    } else {
-      const el = createElement('image', project.artboard.width, project.artboard.height) as any;
-      el.assetId = assetId;
-      el.name = project.assets.find((a) => a.id === assetId)?.name ?? 'Image';
-      addElement(el);
+      return;
     }
+    addElement(createImageFromAsset(asset, project.artboard.width, project.artboard.height));
+  };
+
+  const onDragStart = (e: DragEvent, assetId: string) => {
+    e.dataTransfer.setData(ASSET_DRAG_TYPE, assetId);
+    e.dataTransfer.effectAllowed = 'copy';
   };
 
   return (
@@ -68,12 +78,15 @@ export function AssetsPanel() {
             <div
               key={a.id}
               className="asset-thumb"
-              title={`${a.name} — click to use`}
-              onClick={() => assignAsset(a.id)}
+              title={`${a.name} — click to add, or drag onto the canvas`}
+              draggable
+              onDragStart={(e) => onDragStart(e, a.id)}
+              onClick={() => placeAsset(a.id)}
             >
-              <img src={a.src} alt={a.name} />
+              <img src={a.src} alt={a.name} draggable={false} />
               <button
                 className="del"
+                draggable={false}
                 onClick={(e) => { e.stopPropagation(); removeAsset(a.id); }}
                 title="Remove asset"
               >

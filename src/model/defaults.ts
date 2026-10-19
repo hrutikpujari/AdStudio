@@ -1,8 +1,10 @@
 import type {
   AdElement,
   AnimationConfig,
+  AssetRef,
   CreativeProject,
   ElementType,
+  ImageElement,
   SlideConfig,
 } from './types';
 
@@ -51,6 +53,37 @@ const base = <T extends ElementType>(
   locked: false,
   animation: { ...DEFAULT_ANIMATION },
 });
+
+/**
+ * Image element for an asset, sized to the asset's aspect ratio and
+ * fitted within ~70% of the artboard. With `center`, the image is
+ * centered on that artboard point (drop position); otherwise on the
+ * artboard. Always kept inside the artboard bounds.
+ */
+export function createImageFromAsset(
+  asset: AssetRef,
+  artW: number,
+  artH: number,
+  center?: { x: number; y: number },
+): ImageElement {
+  const nw = asset.width || 140;
+  const nh = asset.height || 100;
+  const s = Math.min(1, (artW * 0.7) / nw, (artH * 0.7) / nh);
+  const w = Math.max(8, Math.round(nw * s));
+  const h = Math.max(8, Math.round(nh * s));
+  const cx = center ? center.x : artW / 2;
+  const cy = center ? center.y : artH / 2;
+  const el = createElement('image', artW, artH) as ImageElement;
+  return {
+    ...el,
+    name: asset.name.replace(/\.[a-z0-9]+$/i, '') || 'Image',
+    assetId: asset.id,
+    width: w,
+    height: h,
+    x: Math.round(Math.max(0, Math.min(cx - w / 2, artW - w))),
+    y: Math.round(Math.max(0, Math.min(cy - h / 2, artH - h))),
+  };
+}
 
 /** Create an element of the given type, centered-ish on the artboard. */
 export function createElement(
