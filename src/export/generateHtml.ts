@@ -13,6 +13,7 @@ import type {
   SpotlightElement,
   TextElement,
   VerticalSliderElement,
+  VideoElement,
 } from '../model/types';
 import { allKeyframesCSS, animationShorthand } from '../render/animations';
 
@@ -46,6 +47,25 @@ function slideInner(ctx: Ctx, s: SlideConfig, cls: string): string {
     return `<img src="${esc(ctx.assetUrl(s.assetId))}" alt="${esc(s.title)}" class="${cls}-img" draggable="false"/>`;
   }
   return `<div class="${cls}-ph"><div class="${cls}-ph-title">${esc(s.title)}</div><div class="${cls}-ph-sub">${esc(s.subtitle)}</div></div>`;
+}
+
+/** Card-layout slide: product image on top, title/price/CTA below —
+ *  used when the imported creative's slides carry rich card markup. */
+function cardInner(ctx: Ctx, s: SlideConfig, el: CarouselElement, c: CarouselElement['config']): string {
+  const src = s.assetId ? ctx.assetUrl(s.assetId) : '';
+  const fs = Math.max(7, Math.round(el.height * ((c.slideHPct ?? 86) / 100) * 0.055));
+  const img = src
+    ? `<img src="${esc(src)}" alt="${esc(s.title)}" class="cr-card-img" draggable="false"/>`
+    : `<div class="cr-card-ph"></div>`;
+  return (
+    `<div class="cr-card" style="font-size:${fs}px">` +
+    `<div class="cr-card-media">${img}</div>` +
+    `<div class="cr-card-body">` +
+    `<div class="cr-card-title">${esc(s.title)}</div>` +
+    `<div class="cr-card-price">${s.oldPrice ? `<s>${esc(s.oldPrice)}</s>` : ''}<b>${esc(s.price ?? '')}</b></div>` +
+    (s.ctaLabel ? `<div class="cr-card-cta">${esc(s.ctaLabel)}</div>` : '') +
+    `</div></div>`
+  );
 }
 
 /**
@@ -87,6 +107,18 @@ function genImage(ctx: Ctx, el: ImageElement, z: number): string {
     ? `<img src="${esc(src)}" style="width:100%;height:100%;object-fit:${el.fit};${br}display:block" alt="" draggable="false"/>`
     : `<div class="ap-ph" style="${br}"><span>IMAGE</span></div>`;
   return elShell(el, z, inner, '', ctx.scrubMs);
+}
+
+function genVideo(_ctx: Ctx, el: VideoElement, z: number): string {
+  if (!el.src) return elShell(el, z, `<div class="ap-ph"><span>VIDEO</span></div>`, '', _ctx.scrubMs);
+  const attrs =
+    (el.autoplay ? ' autoplay' : '') +
+    (el.autoplay || el.muted ? ' muted' : '') +
+    (el.loop ? ' loop' : '');
+  const inner =
+    `<video src="${esc(el.src)}"${attrs} playsinline preload="auto" ` +
+    `style="width:100%;height:100%;object-fit:${el.fit};display:block"></video>`;
+  return elShell(el, z, inner, '', _ctx.scrubMs);
 }
 
 function genText(_ctx: Ctx, el: TextElement, z: number): string {
@@ -131,8 +163,9 @@ interface ComponentOut {
 function genCarousel(ctx: Ctx, el: CarouselElement, z: number): ComponentOut {
   const c = el.config;
   const stage = c.variant === 'stage';
+  const cardMode = c.slideLayout === 'card';
   const slides = c.slides
-    .map((s) => `<div class="cr-item">${slideInner(ctx, s, 'cr')}</div>`)
+    .map((s) => `<div class="cr-item"${s.url ? ` data-url="${esc(s.url)}"` : ''}>${cardMode ? cardInner(ctx, s, el, c) : slideInner(ctx, s, 'cr')}</div>`)
     .join('');
   const inner = `<div class="cr-wrap" data-hover="${c.pauseOnHover ? 1 : 0}">${slides}</div>`;
   const sw = c.slideWPct ?? 70;
@@ -148,7 +181,17 @@ function genCarousel(ctx: Ctx, el: CarouselElement, z: number): ComponentOut {
 #css-${el.id} .cr-item.left{transform:translate(calc(-50% - ${sx}%),-50%) scale(${ss});opacity:.5;z-index:2${stage ? ';filter:brightness(.45) saturate(.5)' : ''}}
 #css-${el.id} .cr-item.right{transform:translate(calc(-50% + ${sx}%),-50%) scale(${ss});opacity:.5;z-index:2${stage ? ';filter:brightness(.45) saturate(.5)' : ''}}
 #css-${el.id} .cr-item.hidden{transform:translate(calc(-50% - 160%),-50%) scale(.4);opacity:0;z-index:0}
-#css-${el.id} .cr-img{object-fit:${c.slideFit ?? 'cover'}}`;
+#css-${el.id} .cr-img{object-fit:${c.slideFit ?? 'cover'}}${
+    cardMode ? `
+#css-${el.id} .cr-card{width:${c.cardWPct ?? 90}%;height:100%;margin:0 auto;background:#fff;border-radius:.6em;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 .15em .6em rgba(0,0,0,.1)}
+#css-${el.id} .cr-card-media{height:55%;flex-shrink:0;overflow:hidden}
+#css-${el.id} .cr-card-img{width:100%;height:100%;object-fit:${c.slideFit ?? 'cover'};display:block}
+#css-${el.id} .cr-card-ph{width:100%;height:100%;background:#f0f0f0}
+#css-${el.id} .cr-card-body{flex:1;min-height:0;padding:.4em .6em;display:flex;flex-direction:column;font-family:Arial,sans-serif;color:#222}
+#css-${el.id} .cr-card-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#css-${el.id} .cr-card-price{font-weight:700;font-size:1.15em;color:#c73a1d;margin-top:.15em;display:flex;gap:.4em}
+#css-${el.id} .cr-card-price s{color:#999;font-weight:400}
+#css-${el.id} .cr-card-cta{margin-top:auto;background:#333;color:#fff;border-radius:.25em;text-align:center;font-weight:700;font-size:.9em;padding:.35em 0}` : ''}`;
   const runtime = `(function(){
  var wrap=document.querySelector('#css-${el.id} .cr-wrap');if(!wrap)return;
  var slides=Array.prototype.slice.call(wrap.querySelectorAll('.cr-item'));
@@ -458,6 +501,7 @@ export function generateHtml(
     let html = '';
     switch (el.type) {
       case 'image': html = genImage(ctx, el, z); break;
+      case 'video': html = genVideo(ctx, el, z); break;
       case 'text': html = genText(ctx, el, z); break;
       case 'button': html = genButton(ctx, el, z); break;
       case 'shape': html = genShape(ctx, el, z); break;

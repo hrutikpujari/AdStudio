@@ -331,6 +331,33 @@ export function PropertiesPanel() {
         </div>
       )}
 
+      {el.type === 'video' && (
+        <div className="prop-group">
+          <h4>Video</h4>
+          <Row label="Source">
+            <input type="text" value={el.src} onChange={(e) => set({ src: e.target.value })} placeholder="https://… .mp4" />
+          </Row>
+          <Row label="Fit">
+            <select value={el.fit} onChange={(e) => set({ fit: e.target.value as any })}>
+              <option value="contain">Contain</option>
+              <option value="cover">Cover</option>
+              <option value="fill">Fill</option>
+            </select>
+          </Row>
+          <Row label="Playback">
+            <label style={{ fontSize: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
+              <input type="checkbox" checked={el.autoplay} onChange={(e) => set({ autoplay: e.target.checked })} /> Auto
+            </label>
+            <label style={{ fontSize: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
+              <input type="checkbox" checked={el.loop} onChange={(e) => set({ loop: e.target.checked })} /> Loop
+            </label>
+            <label style={{ fontSize: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
+              <input type="checkbox" checked={el.muted} onChange={(e) => set({ muted: e.target.checked })} /> Muted
+            </label>
+          </Row>
+        </div>
+      )}
+
       {el.type === 'text' && (
         <div className="prop-group">
           <h4>Text</h4>

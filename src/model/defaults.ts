@@ -103,6 +103,15 @@ export function createElement(
         fit: 'contain',
         borderRadius: 0,
       };
+    case 'video':
+      return {
+        ...base('video', 'Video', cx(240), cy(135), 240, 135),
+        src: '',
+        fit: 'cover',
+        autoplay: true,
+        loop: true,
+        muted: true,
+      };
     case 'text':
       return {
         ...base('text', 'Text', cx(200), Math.max(10, at?.y ?? 20), 200, 40),

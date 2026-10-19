@@ -9,6 +9,7 @@
 
 export type ElementType =
   | 'image'
+  | 'video'
   | 'text'
   | 'button'
   | 'shape'
@@ -76,6 +77,8 @@ export interface SlideConfig {
   subtitle: string;
   price?: string;     // used by vertical-slider product cards
   oldPrice?: string;
+  ctaLabel?: string;  // per-slide CTA text (card-layout slides)
+  url?: string;       // per-slide click-through; empty -> project clickTag
 }
 
 export interface CarouselConfig {
@@ -98,6 +101,13 @@ export interface CarouselConfig {
   sideScale?: number;
   /** measured object-fit for slide images; undefined = 'cover' */
   slideFit?: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down';
+  /** 'card' = each slide renders as a product card (image + title +
+   *  price + CTA), reconstructed from rich-card slide markup.
+   *  Undefined = plain image slides. */
+  slideLayout?: 'plain' | 'card';
+  /** card width as % of the slide box (e.g. 90 for a 90%-wide card
+   *  centered inside a full-bleed slide); undefined = 90 */
+  cardWPct?: number;
 }
 
 export interface CardStackConfig {
@@ -171,6 +181,17 @@ export interface ImageElement extends BaseElement {
   assetId?: string;
   fit: 'contain' | 'cover' | 'fill';
   borderRadius: number;
+}
+
+export interface VideoElement extends BaseElement {
+  type: 'video';
+  /** remote http(s) URL or data: URL — local video files are not
+   *  embedded (they would exceed project storage) */
+  src: string;
+  fit: 'contain' | 'cover' | 'fill';
+  autoplay: boolean;
+  loop: boolean;
+  muted: boolean;
 }
 
 export interface TextElement extends BaseElement {
@@ -247,6 +268,7 @@ export interface SpotlightElement extends BaseElement {
 
 export type AdElement =
   | ImageElement
+  | VideoElement
   | TextElement
   | ButtonElement
   | ShapeElement

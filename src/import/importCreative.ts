@@ -14,6 +14,7 @@ import type {
   SliceFlipElement,
   SlideConfig,
   TextElement,
+  VideoElement,
 } from '../model/types';
 
 /**
@@ -414,7 +415,7 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
     const ct = probeRes.clickTag ?? /var\s+clickTag\s*=\s*["']([^"']+)/.exec(html)?.[1];
     if (ct && /^https?:/i.test(ct)) project.clickTag = ct;
     const comps = project.elements.filter(
-      (e) => e.type !== 'image' && e.type !== 'text' && e.type !== 'button' && e.type !== 'shape',
+      (e) => e.type !== 'image' && e.type !== 'video' && e.type !== 'text' && e.type !== 'button' && e.type !== 'shape',
     ).length;
     return {
       ok: true, fidelity: 'flattened', project,
@@ -584,10 +585,65 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       const imgs = kids.map((k) => (k.tagName === 'IMG' ? k : k.querySelector('img')));
       if (imgs.filter(Boolean).length < Math.max(3, kids.length - 1)) return null;
 
+      // rich-card slides carry product text + a CTA inside each slide —
+      // extract it so the card layout survives reconstruction
+      const squish = (s: string) => s.replace(/\s+/g, ' ').trim();
+      const slideMeta = kids.map((k) => {
+        const pick = (sel: string) => squish(k.querySelector(sel)?.textContent ?? '');
+        const title = pick('h1,h2,h3,h4,h5,[class*="title" i],[class*="name" i]');
+        let price = '', oldPrice = '';
+        const priceEl = k.querySelector(
+          '[class*="subtitle" i],[class*="price" i],[class*="amount" i],[class*="cost" i]',
+        );
+        if (priceEl) {
+          oldPrice = squish(
+            priceEl.querySelector('s,strike,del,[style*="line-through" i]')?.textContent ?? '',
+          );
+          const full = squish(priceEl.textContent ?? '');
+          price = oldPrice ? full.replace(oldPrice, '').trim() : full;
+        }
+        const ctaEl = k.querySelector('button,[class*="shop" i],[class*="cta" i]');
+        const ctaLabel = squish(ctaEl?.textContent ?? '');
+        let url = '';
+        const idx =
+          ctaEl?.getAttribute('data-click-index') ??
+          k.querySelector('[data-click-index]')?.getAttribute('data-click-index') ??
+          '';
+        if (idx) {
+          url = new RegExp(`clickTag${idx}\\s*=\\s*['"]([^'"]+)`).exec(html)?.[1] ?? '';
+        }
+        if (!url) {
+          url =
+            ctaEl?.getAttribute('data-click-url') ??
+            k.querySelector('[data-click-url]')?.getAttribute('data-click-url') ??
+            '';
+        }
+        if (url && !/^https?:/i.test(url)) url = '';
+        return { title, price, oldPrice, ctaLabel, url };
+      });
+      const cardish = slideMeta.filter((m) => m.title || m.price).length >= 2;
+      let cardWPct: number | undefined;
+      if (cardish) {
+        const ki = slideMeta.findIndex((m) => m.title || m.price);
+        const inner = kids[ki]?.querySelector('[class*="card" i],[class*="content" i]')
+          ?? kids[ki]?.firstElementChild;
+        if (inner && kids[ki]) {
+          const kr = kids[ki].getBoundingClientRect();
+          const ir = inner.getBoundingClientRect();
+          if (ir.width > kr.width * 0.3 && ir.width < kr.width * 0.98) {
+            cardWPct = Math.min(98, Math.max(20, Math.round((ir.width / kr.width) * 100)));
+          }
+        }
+      }
+
       const slides: SlideConfig[] = kids.map((_, i) => ({
         id: uid('sl'),
         assetId: registerImgAsset(imgs[i]?.getAttribute('src') ?? ''),
-        title: '', subtitle: '',
+        title: slideMeta[i].title.slice(0, 200), subtitle: '',
+        ...(slideMeta[i].price ? { price: slideMeta[i].price.slice(0, 40) } : {}),
+        ...(slideMeta[i].oldPrice ? { oldPrice: slideMeta[i].oldPrice.slice(0, 40) } : {}),
+        ...(slideMeta[i].ctaLabel ? { ctaLabel: slideMeta[i].ctaLabel.slice(0, 80) } : {}),
+        ...(slideMeta[i].url ? { url: slideMeta[i].url.slice(0, 2000) } : {}),
       }));
       if (slides.filter((s) => s.assetId).length < 2) return null;
 
@@ -643,7 +699,15 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       const stageLike = common.some((c) =>
         new RegExp(`\\.${esc(c)}\\.[a-zA-Z0-9_-]+[^{]*\\{[^}]*filter\\s*:\\s*brightness`, 'i').test(allStyleText));
       const variant: 'coverflow' | 'stage' = stageLike || filters.some((f) => f && f !== 'none') ? 'stage' : 'coverflow';
-      const intervalMs = parseInt(/setInterval\([^,]+,\s*(\d+)\s*\)/.exec(html)?.[1] ?? '') || 2500;
+      // autoplay period — the interval arg is often a named constant
+      // (setInterval(fn, slideDuration)) rather than a literal
+      const intervalMs = (() => {
+        const m = /setInterval\([^,]+,\s*([A-Za-z_$][\w$]*|\d+)\s*\)/.exec(html);
+        if (!m) return 2500;
+        if (/^\d+$/.test(m[1])) return parseInt(m[1]);
+        const v = new RegExp(`${m[1]}\\s*=\\s*(\\d+)`).exec(html);
+        return v ? parseInt(v[1]) : 2500;
+      })();
       let transitionMs = 600;
       for (const c of common) {
         const re = new RegExp(`\\.${esc(c)}[^{]*\\{[^}]*transition:[^;]*?(\\d*\\.?\\d+)s`, 'i');
@@ -661,6 +725,8 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
           slides, autoplay: true, intervalMs, transitionMs,
           pauseOnHover: /clearInterval/.test(html) && /mouseenter|mouseover/.test(html),
           variant,
+          ...(cardish ? { slideLayout: 'card' as const } : {}),
+          ...(cardWPct != null ? { cardWPct } : {}),
         },
       };
     };
@@ -808,6 +874,23 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
 
         const tag = node.tagName;
 
+        if (tag === 'VIDEO') {
+          // remote URLs only — local video files aren't inlined into the
+          // asset map (multi-MB data URLs would exceed project storage)
+          const vsrc =
+            node.getAttribute('src') ??
+            node.querySelector('source')?.getAttribute('src') ??
+            '';
+          elements.push({
+            id: uid(), type: 'video', name: 'Video',
+            ...base,
+            src: /^https?:|^data:/i.test(vsrc) ? vsrc : '',
+            fit: style.objectFit === 'contain' || style.objectFit === 'fill' ? style.objectFit : 'cover',
+            autoplay: true, loop: true, muted: true,
+          } as VideoElement);
+          return;
+        }
+
         if (tag === 'IMG') {
           const srcAttr = node.getAttribute('src') ?? '';
           const aid = registerImgAsset(srcAttr);
@@ -905,6 +988,34 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
 
         // filled / bordered nodes → shape (gradient counts as a fill)
         const bgCol = style.backgroundColor;
+
+        // icon-only controls authored via ::before content (slider arrows
+        // etc.) — preserve the glyph so they don't import as blank circles
+        const clsAttr = `${node.getAttribute('class') ?? ''} ${node.getAttribute('aria-label') ?? ''}`;
+        if (tag === 'BUTTON' || /prev|next|arrow|nav|btn/i.test(clsAttr)) {
+          let pseudo = '';
+          try { pseudo = iwin.getComputedStyle(node, '::before').content ?? ''; } catch { /* ok */ }
+          const glyph = /^["']([\s\S]+)["']$/.exec(pseudo)?.[1] ?? '';
+          if (glyph) {
+            elements.push({
+              id: uid(), type: 'button',
+              name: node.getAttribute('aria-label') || 'Nav',
+              ...base,
+              label: glyph,
+              fontFamily: style.fontFamily || 'Arial, sans-serif',
+              fontSize: Math.max(8, Math.round(h * 0.45)),
+              fontWeight: 400,
+              color: rgbToHex(style.color) ?? '#333333',
+              background:
+                bgCol && bgCol !== 'rgba(0, 0, 0, 0)' && bgCol !== 'transparent'
+                  ? bgCol : 'rgba(255,255,255,0.7)',
+              borderRadius: parseFloat(style.borderRadius) || 0,
+              url: '', direction: 'ltr',
+            } as ButtonElement);
+            return;
+          }
+        }
+
         const hasBg =
           (bgCol && bgCol !== 'rgba(0, 0, 0, 0)' && bgCol !== 'transparent') || gradientFill;
         const hasBorder = parseFloat(style.borderWidth) > 0 && style.borderStyle !== 'none';

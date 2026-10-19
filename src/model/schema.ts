@@ -35,6 +35,8 @@ const slideSchema = z.object({
   subtitle: z.string().max(300),
   price: z.string().max(40).optional(),
   oldPrice: z.string().max(40).optional(),
+  ctaLabel: z.string().max(80).optional(),
+  url: z.string().max(2000).optional(),
 });
 
 const elementSchema = z.discriminatedUnion('type', [
@@ -44,6 +46,15 @@ const elementSchema = z.discriminatedUnion('type', [
     assetId: z.string().max(64).optional(),
     fit: z.enum(['contain', 'cover', 'fill']),
     borderRadius: z.number().min(0).max(500),
+  }),
+  z.object({
+    ...baseElement,
+    type: z.literal('video'),
+    src: z.string().max(4_000_000),
+    fit: z.enum(['contain', 'cover', 'fill']),
+    autoplay: z.boolean(),
+    loop: z.boolean(),
+    muted: z.boolean(),
   }),
   z.object({
     ...baseElement,
@@ -96,6 +107,8 @@ const elementSchema = z.discriminatedUnion('type', [
       sideXPct: z.number().min(0).max(500).optional(),
       sideScale: z.number().min(0.05).max(1.5).optional(),
       slideFit: z.enum(['fill', 'contain', 'cover', 'none', 'scale-down']).optional(),
+      slideLayout: z.enum(['plain', 'card']).optional(),
+      cardWPct: z.number().min(20).max(100).optional(),
     }),
   }),
   z.object({

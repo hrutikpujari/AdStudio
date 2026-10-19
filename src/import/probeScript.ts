@@ -194,10 +194,67 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       ? (W.getComputedStyle(firstImg as Element).objectFit || undefined)
       : undefined;
 
+    // rich-card slides carry product text + a CTA inside each slide —
+    // extract it so the card layout survives reconstruction
+    const squish = (s: string) => s.replace(/\s+/g, ' ').trim();
+    const slideMeta = kids.map((k) => {
+      const pick = (sel: string) => squish(k.querySelector(sel)?.textContent ?? '');
+      const title = pick('h1,h2,h3,h4,h5,[class*="title" i],[class*="name" i]');
+      let price = '', oldPrice = '';
+      const priceEl = k.querySelector(
+        '[class*="subtitle" i],[class*="price" i],[class*="amount" i],[class*="cost" i]',
+      );
+      if (priceEl) {
+        oldPrice = squish(
+          priceEl.querySelector('s,strike,del,[style*="line-through" i]')?.textContent ?? '',
+        );
+        const full = squish(priceEl.textContent ?? '');
+        price = oldPrice ? full.replace(oldPrice, '').trim() : full;
+      }
+      const ctaEl = k.querySelector('button,[class*="shop" i],[class*="cta" i]');
+      const ctaLabel = squish(ctaEl?.textContent ?? '');
+      let url = '';
+      const idx =
+        ctaEl?.getAttribute('data-click-index') ??
+        k.querySelector('[data-click-index]')?.getAttribute('data-click-index') ??
+        '';
+      if (idx) {
+        url = new RegExp(`clickTag${idx}\\s*=\\s*['"]([^'"]+)`).exec(cfg.html)?.[1] ?? '';
+      }
+      if (!url) {
+        url =
+          ctaEl?.getAttribute('data-click-url') ??
+          k.querySelector('[data-click-url]')?.getAttribute('data-click-url') ??
+          '';
+      }
+      if (url && !/^https?:/i.test(url)) url = '';
+      return { title, price, oldPrice, ctaLabel, url };
+    });
+    const cardish = slideMeta.filter((m) => m.title || m.price).length >= 2;
+    // card width vs slide width (e.g. a 90%-wide card centered in a
+    // full-bleed slide) — measured from the largest card-like child
+    let cardWPct: number | undefined;
+    if (cardish) {
+      const ki = slideMeta.findIndex((m) => m.title || m.price);
+      const inner = kids[ki]?.querySelector('[class*="card" i],[class*="content" i]')
+        ?? kids[ki]?.firstElementChild;
+      if (inner && kids[ki]) {
+        const kr = kids[ki].getBoundingClientRect();
+        const ir = inner.getBoundingClientRect();
+        if (ir.width > kr.width * 0.3 && ir.width < kr.width * 0.98) {
+          cardWPct = Math.min(98, Math.max(20, Math.round((ir.width / kr.width) * 100)));
+        }
+      }
+    }
+
     const slides = kids.map((_, i) => ({
       id: uid('sl'),
       assetSrc: registerSrc(imgs[i]?.getAttribute('src') ?? ''),
-      title: '', subtitle: '',
+      title: slideMeta[i].title.slice(0, 200), subtitle: '',
+      ...(slideMeta[i].price ? { price: slideMeta[i].price.slice(0, 40) } : {}),
+      ...(slideMeta[i].oldPrice ? { oldPrice: slideMeta[i].oldPrice.slice(0, 40) } : {}),
+      ...(slideMeta[i].ctaLabel ? { ctaLabel: slideMeta[i].ctaLabel.slice(0, 80) } : {}),
+      ...(slideMeta[i].url ? { url: slideMeta[i].url.slice(0, 2000) } : {}),
     }));
     if (slides.filter((s) => s.assetSrc).length < 2) {
       diag.lastBail = `slideSrcs<2 kids=${kids.length}`;
@@ -290,7 +347,15 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
     const stageLike = common.some((c) =>
       new RegExp(`\\.${esc(c)}\\.[a-zA-Z0-9_-]+[^{]*\\{[^}]*filter\\s*:\\s*brightness`, 'i').test(cfg.styleText));
     const variant = stageLike || filters.some((f) => f && f !== 'none') ? 'stage' : 'coverflow';
-    const intervalMs = parseInt(/setInterval\([^,]+,\s*(\d+)\s*\)/.exec(cfg.html)?.[1] ?? '') || 2500;
+    // autoplay period — the interval arg is often a named constant
+    // (setInterval(fn, slideDuration)) rather than a literal
+    const intervalMs = (() => {
+      const m = /setInterval\([^,]+,\s*([A-Za-z_$][\w$]*|\d+)\s*\)/.exec(cfg.html);
+      if (!m) return 2500;
+      if (/^\d+$/.test(m[1])) return parseInt(m[1]);
+      const v = new RegExp(`${m[1]}\\s*=\\s*(\\d+)`).exec(cfg.html);
+      return v ? parseInt(v[1]) : 2500;
+    })();
     let transitionMs = 600;
     for (const c of common) {
       const re = new RegExp(`\\.${esc(c)}[^{]*\\{[^}]*transition:[^;]*?(\\d*\\.?\\d+)s`, 'i');
@@ -309,6 +374,8 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
         pauseOnHover: /clearInterval/.test(cfg.html) && /mouseenter|mouseover/.test(cfg.html),
         variant,
         ...(slideFit && slideFit !== 'cover' ? { slideFit } : {}),
+        ...(cardish ? { slideLayout: 'card' } : {}),
+        ...(cardWPct != null ? { cardWPct } : {}),
         ...(geom.slideWPct != null ? geom : {}),
       },
     };
@@ -443,6 +510,23 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
 
         const tag = node.tagName;
 
+        if (tag === 'VIDEO') {
+          // remote/src-attr URLs only — local video files aren't inlined
+          // into pathMap (multi-MB data URLs would exceed project storage)
+          const vsrc =
+            node.getAttribute('src') ??
+            node.querySelector('source')?.getAttribute('src') ??
+            '';
+          elements.push({
+            id: uid(), type: 'video', name: 'Video',
+            ...base,
+            src: /^https?:|^data:/i.test(vsrc) ? vsrc : '',
+            fit: style.objectFit === 'contain' || style.objectFit === 'fill' ? style.objectFit : 'cover',
+            autoplay: true, loop: true, muted: true,
+          });
+          return;
+        }
+
         if (tag === 'IMG') {
           const srcAttr = registerSrc(node.getAttribute('src') ?? '');
           if (srcAttr) {
@@ -523,6 +607,34 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
         }
 
         const bgCol = style.backgroundColor;
+
+        // icon-only controls authored via ::before content (slider arrows
+        // etc.) — preserve the glyph so they don't import as blank circles
+        const clsAttr = `${node.getAttribute('class') ?? ''} ${node.getAttribute('aria-label') ?? ''}`;
+        if (tag === 'BUTTON' || /prev|next|arrow|nav|btn/i.test(clsAttr)) {
+          let pseudo = '';
+          try { pseudo = W.getComputedStyle(node, '::before').content ?? ''; } catch { /* ok */ }
+          const glyph = /^["']([\s\S]+)["']$/.exec(pseudo)?.[1] ?? '';
+          if (glyph) {
+            elements.push({
+              id: uid(), type: 'button',
+              name: node.getAttribute('aria-label') || 'Nav',
+              ...base,
+              label: glyph,
+              fontFamily: style.fontFamily || 'Arial, sans-serif',
+              fontSize: Math.max(8, Math.round(h * 0.45)),
+              fontWeight: 400,
+              color: rgbToHex(style.color) ?? '#333333',
+              background:
+                bgCol && bgCol !== 'rgba(0, 0, 0, 0)' && bgCol !== 'transparent'
+                  ? bgCol : 'rgba(255,255,255,0.7)',
+              borderRadius: parseFloat(style.borderRadius) || 0,
+              url: '', direction: 'ltr',
+            });
+            return;
+          }
+        }
+
         const hasBg =
           (bgCol && bgCol !== 'rgba(0, 0, 0, 0)' && bgCol !== 'transparent') || gradientFill;
         const hasBorder = parseFloat(style.borderWidth) > 0 && style.borderStyle !== 'none';

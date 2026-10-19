@@ -65,6 +65,11 @@ export function validateForExport(project: CreativeProject): ValidationIssue[] {
           issues.push({ level: 'warning', message: `"${el.name}" has no image assigned`, elementId: el.id });
         }
         break;
+      case 'video':
+        if (!el.src) {
+          issues.push({ level: 'warning', message: `"${el.name}" has no video source`, elementId: el.id });
+        }
+        break;
       case 'button':
         if (el.url && !URL_RE.test(el.url)) {
           issues.push({ level: 'error', message: `"${el.name}" has an invalid click-through URL`, elementId: el.id });

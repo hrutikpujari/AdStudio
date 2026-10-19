@@ -6,6 +6,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  Film,
   Image as ImageIcon,
   Layers,
   Lock,
@@ -26,6 +27,7 @@ import { useEditor } from '../store/projectStore';
 
 const TYPE_ICON: Record<ElementType, React.ReactNode> = {
   image: <ImageIcon size={12} />,
+  video: <Film size={12} />,
   text: <Type size={12} />,
   button: <MousePointerClick size={12} />,
   shape: <Square size={12} />,

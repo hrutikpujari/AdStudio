@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { DragEvent } from 'react';
 import {
   Box,
+  Film,
   Image as ImageIcon,
   Layers,
   Columns3,
@@ -19,6 +20,7 @@ import { useEditor } from '../store/projectStore';
 
 const BASIC: { type: ElementType; label: string; icon: React.ReactNode }[] = [
   { type: 'image', label: 'Image', icon: <ImageIcon size={18} /> },
+  { type: 'video', label: 'Video', icon: <Film size={18} /> },
   { type: 'text', label: 'Text', icon: <Type size={18} /> },
   { type: 'button', label: 'Button / CTA', icon: <MousePointerClick size={18} /> },
   { type: 'shape', label: 'Shape', icon: <Square size={18} /> },

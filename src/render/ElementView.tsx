@@ -2,6 +2,7 @@ import type {
   AdElement,
   AssetRef,
   CarouselElement,
+  VideoElement,
   CardStackElement,
   CubeElement,
   FanElement,
@@ -17,10 +18,33 @@ import type { CSSProperties } from 'react';
  * Live animation runs in the preview iframe, which renders the exported HTML.
  */
 
-function SlideThumb({ slide, assets, accent, fit = 'cover' }: { slide: SlideConfig; assets: AssetRef[]; accent: string; fit?: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down' }) {
+function SlideThumb({ slide, assets, accent, fit = 'cover', cardWPct, slideH }: { slide: SlideConfig; assets: AssetRef[]; accent: string; fit?: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down'; cardWPct?: number; slideH?: number }) {
   const src = slide.assetId ? assets.find((a) => a.id === slide.assetId)?.src : '';
-  if (src) {
+  const card = cardWPct != null && (slide.title || slide.price || slide.ctaLabel);
+  if (src && !card) {
     return <img src={src} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: fit, display: 'block' }} />;
+  }
+  if (card) {
+    const fs = Math.max(7, (slideH ?? 200) * 0.055);
+    return (
+      <div style={{ width: `${cardWPct}%`, height: '100%', margin: '0 auto', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: fs * 0.6, boxShadow: '0 2px 8px rgba(0,0,0,.1)', fontSize: fs }}>
+        <div style={{ height: '55%', overflow: 'hidden', flexShrink: 0 }}>
+          {src
+            ? <img src={src} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: fit, display: 'block' }} />
+            : <div className="ce-ph" style={{ borderColor: accent, color: accent, height: '100%' }}><span>IMAGE</span></div>}
+        </div>
+        <div style={{ flex: 1, padding: '4% 6%', display: 'flex', flexDirection: 'column', minHeight: 0, fontFamily: 'Arial, sans-serif', color: '#222' }}>
+          <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{slide.title}</div>
+          <div style={{ fontWeight: 700, fontSize: '1.15em', color: '#c73a1d', marginTop: '0.15em', display: 'flex', gap: '0.4em' }}>
+            {slide.oldPrice ? <span style={{ color: '#999', textDecoration: 'line-through' }}>{slide.oldPrice}</span> : null}
+            <span>{slide.price}</span>
+          </div>
+          {slide.ctaLabel
+            ? <div style={{ marginTop: 'auto', background: '#333', color: '#fff', borderRadius: 3, textAlign: 'center', fontWeight: 700, fontSize: '0.9em', padding: '0.35em 0' }}>{slide.ctaLabel}</div>
+            : null}
+        </div>
+      </div>
+    );
   }
   return (
     <div className="ce-ph" style={{ borderColor: accent, color: accent }}>
@@ -38,14 +62,17 @@ function CarouselView({ el, assets }: { el: CarouselElement; assets: AssetRef[] 
   const sh = c.slideHPct ?? 86;
   const sx = c.sideXPct ?? (stage ? 110 : 75);
   const ss = c.sideScale ?? (stage ? 0.4 : 0.8);
+  const cardMode = c.slideLayout === 'card';
+  const cardWPct = cardMode ? (c.cardWPct ?? 90) : undefined;
+  const slideH = el.height * (sh / 100);
   const side = (idx: number, dir: -1 | 1) =>
     slides[idx] && (
       <div style={{
         position: 'absolute', top: '50%', left: '50%', width: `${sw}%`, height: `${sh}%`,
         transform: `translate(calc(-50% ${dir > 0 ? '+' : '-'} ${sx}%), -50%) scale(${ss})`,
-        opacity: 0.5, filter: stage ? 'brightness(.45) saturate(.5)' : undefined, zIndex: 2,
+        opacity: cardMode ? 0 : 0.5, filter: stage ? 'brightness(.45) saturate(.5)' : undefined, zIndex: 2,
       }}>
-        <SlideThumb slide={slides[idx]} assets={assets} accent="#b3e0ff" fit={c.slideFit} />
+        <SlideThumb slide={slides[idx]} assets={assets} accent="#b3e0ff" fit={c.slideFit} cardWPct={cardWPct} slideH={slideH} />
       </div>
     );
   return (
@@ -56,7 +83,7 @@ function CarouselView({ el, assets }: { el: CarouselElement; assets: AssetRef[] 
         position: 'absolute', top: '50%', left: '50%', width: `${sw}%`, height: `${sh}%`,
         transform: 'translate(-50%, -50%)', zIndex: 3, boxShadow: '0 2px 10px rgba(0,0,0,.18)',
       }}>
-        {slides[0] ? <SlideThumb slide={slides[0]} assets={assets} accent="#b3e0ff" fit={c.slideFit} /> : null}
+        {slides[0] ? <SlideThumb slide={slides[0]} assets={assets} accent="#b3e0ff" fit={c.slideFit} cardWPct={cardWPct} slideH={slideH} /> : null}
       </div>
     </div>
   );
@@ -232,6 +259,17 @@ export function ElementView({ el, assets }: { el: AdElement; assets: AssetRef[] 
           {src
             ? <img src={src} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: el.fit, borderRadius: el.borderRadius, display: 'block' }} />
             : <div className="ce-ph" style={{ borderRadius: el.borderRadius }}><span>IMAGE</span><small>drop or assign asset</small></div>}
+        </div>
+      );
+    }
+    case 'video': {
+      const vel = el as VideoElement;
+      return (
+        <div style={inner}>
+          {vel.src
+            ? <video src={vel.src} autoPlay={vel.autoplay} muted loop={vel.loop} playsInline preload="metadata"
+                style={{ width: '100%', height: '100%', objectFit: vel.fit, display: 'block' }} />
+            : <div className="ce-ph"><span>VIDEO</span><small>set source URL in properties</small></div>}
         </div>
       );
     }
