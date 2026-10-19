@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
-import type { ElementType } from '../model/types';
+import type { AdElement, ElementType } from '../model/types';
 import { createElement, createImageFromAsset } from '../model/defaults';
 import { useEditor } from '../store/projectStore';
 import { CanvasElement } from './CanvasElement';
@@ -67,9 +67,27 @@ export function Artboard({ zoom }: { zoom: number }) {
     const target = hits[0];
     const wasSelected = target === selectedId;
     const el = project.elements.find((x) => x.id === target)!;
+
+    // full-bleed elements are the background — they must never be
+    // reached by cycling, only by a direct click on an uncovered area
+    const isBackground = (cand: AdElement) => {
+      const ix = Math.max(0, Math.min(cand.x + cand.width, AW) - Math.max(cand.x, 0));
+      const iy = Math.max(0, Math.min(cand.y + cand.height, AH) - Math.max(cand.y, 0));
+      return ix * iy >= AW * AH * 0.85;
+    };
+    // clean click on an already-selected element → cycle to the next
+    // non-background element beneath it (or stay put)
+    const cycleBelow = () => {
+      for (let k = 1; k < hits.length; k++) {
+        const cand = hits[(hits.indexOf(target) + k) % hits.length];
+        const candEl = project.elements.find((x) => x.id === cand)!;
+        if (!isBackground(candEl)) { select(cand); return; }
+      }
+    };
+
     if (!wasSelected) select(target);
     if (el.locked) {
-      if (wasSelected && hits.length > 1) select(hits[1 % hits.length]);
+      if (wasSelected) cycleBelow();
       return;
     }
 
@@ -97,9 +115,7 @@ export function Artboard({ zoom }: { zoom: number }) {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       endGesture();
-      // clean click on an already-selected element → cycle selection
-      // to the element beneath it
-      if (!moved && wasSelected && hits.length > 1) select(hits[1 % hits.length]);
+      if (!moved && wasSelected) cycleBelow();
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
