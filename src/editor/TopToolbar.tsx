@@ -47,6 +47,7 @@ export function TopToolbar({
   const canRedo = useEditor((s) => s.future.length > 0);
   const dirty = useEditor((s) => s.dirty);
   const lastSavedAt = useEditor((s) => s.lastSavedAt);
+  const persistFailed = useEditor((s) => s.persistFailed);
   const toast = useUi((s) => s.toast);
 
   const [name, setName] = useState(project.name);
@@ -144,10 +145,12 @@ export function TopToolbar({
         <Download size={14} /> Export
       </button>
 
-      <div className="tb-status">
-        {lastSavedAt
-          ? `saved ${new Date(lastSavedAt).toLocaleTimeString()}`
-          : 'autosave on'}
+      <div className="tb-status" style={persistFailed ? { color: 'var(--danger, #ff7a7a)' } : undefined}>
+        {persistFailed
+          ? 'storage full — export ZIP to keep changes'
+          : lastSavedAt
+            ? `saved ${new Date(lastSavedAt).toLocaleTimeString()}`
+            : 'autosave on'}
       </div>
     </div>
   );

@@ -31,10 +31,16 @@ function writeIndex(list: SavedProjectMeta[]) {
   try { localStorage.setItem(LS_INDEX, JSON.stringify(list)); } catch { /* quota */ }
 }
 
-function persistProject(p: CreativeProject) {
-  try {
-    localStorage.setItem(LS_PREFIX + p.id, JSON.stringify(p));
+/** Persist a project. Imported creatives carry multi-MB data-URL assets,
+ *  so localStorage quota is a real limit — on failure, evict the oldest
+ *  OTHER saved projects and retry. Returns false when nothing fits. */
+function persistProject(p: CreativeProject): boolean {
+  const json = JSON.stringify(p);
+  const write = () => {
+    localStorage.setItem(LS_PREFIX + p.id, json);
     localStorage.setItem(LS_CURRENT, p.id);
+  };
+  const index = () => {
     const idx = readIndex().filter((m) => m.id !== p.id);
     idx.unshift({
       id: p.id, name: p.name,
@@ -42,7 +48,25 @@ function persistProject(p: CreativeProject) {
       updatedAt: p.updatedAt,
     });
     writeIndex(idx.slice(0, 50));
-  } catch { /* storage quota — silently keep working in memory */ }
+  };
+  try {
+    write();
+    index();
+    return true;
+  } catch { /* quota — try evicting old projects */ }
+  const victims = readIndex()
+    .filter((m) => m.id !== p.id)
+    .sort((a, b) => a.updatedAt - b.updatedAt); // oldest first
+  for (const v of victims) {
+    try { localStorage.removeItem(LS_PREFIX + v.id); } catch { /* noop */ }
+    writeIndex(readIndex().filter((m) => m.id !== v.id));
+    try {
+      write();
+      index();
+      return true;
+    } catch { /* keep evicting */ }
+  }
+  return false;
 }
 
 function loadStored(id: string): CreativeProject | null {
@@ -72,6 +96,9 @@ export interface EditorState {
   future: CreativeProject[];
   dirty: boolean;
   lastSavedAt: number | null;
+  /** localStorage quota exhausted — work continues in memory but a
+   *  refresh would lose it; the toolbar surfaces this to the user */
+  persistFailed: boolean;
 
   // transient snapshot captured at the start of a drag/resize so a
   // whole gesture produces exactly one undo step
@@ -123,8 +150,10 @@ export const useEditor = create<EditorState>((set, get) => {
     const p = { ...project, updatedAt: Date.now() };
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      persistProject(get().project);
-      set({ lastSavedAt: Date.now(), dirty: false });
+      const ok = persistProject(get().project);
+      set(ok
+        ? { lastSavedAt: Date.now(), dirty: false, persistFailed: false }
+        : { persistFailed: true });
     }, 800);
     return p;
   };
@@ -144,13 +173,14 @@ export const useEditor = create<EditorState>((set, get) => {
     future: [],
     dirty: false,
     lastSavedAt: null,
+    persistFailed: false,
     gestureSnapshot: null,
 
     newProject: (name, w, h) => {
       persistProject(get().project);
       const p = createProject(name || 'Untitled Creative', w, h);
-      persistProject(p);
-      set({ project: p, selectedId: null, past: [], future: [], dirty: false });
+      const ok = persistProject(p);
+      set({ project: p, selectedId: null, past: [], future: [], dirty: false, persistFailed: !ok });
     },
 
     loadProject: (id) => {
@@ -163,8 +193,8 @@ export const useEditor = create<EditorState>((set, get) => {
 
     replaceProject: (p) => {
       const stamped = { ...p, updatedAt: Date.now() };
-      persistProject(stamped);
-      set({ project: stamped, selectedId: null, past: [], future: [], dirty: false });
+      const ok = persistProject(stamped);
+      set({ project: stamped, selectedId: null, past: [], future: [], dirty: false, persistFailed: !ok });
     },
 
     listProjects: () => readIndex(),
@@ -175,8 +205,10 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     save: () => {
-      persistProject(get().project);
-      set({ lastSavedAt: Date.now(), dirty: false });
+      const ok = persistProject(get().project);
+      set(ok
+        ? { lastSavedAt: Date.now(), dirty: false, persistFailed: false }
+        : { persistFailed: true });
     },
 
     renameProject: (name) => {

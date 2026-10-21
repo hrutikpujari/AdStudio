@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FileArchive, FileCode, FolderOpen, Trash2, X } from 'lucide-react';
 import { AD_SIZES } from '../model/types';
 import { TEMPLATES } from '../model/defaults';
@@ -31,6 +31,20 @@ export function NewProjectDialog({ mode, onClose }: Props) {
   const [tpl, setTpl] = useState<string | null>(null);
   const [saved, setSaved] = useState(listProjects());
   const [importing, setImporting] = useState(false);
+  const [importStep, setImportStep] = useState(0);
+
+  // cycle status hints while the probe measures the creative (4–7s)
+  useEffect(() => {
+    if (!importing) { setImportStep(0); return; }
+    const t = setInterval(() => setImportStep((s) => s + 1), 1600);
+    return () => clearInterval(t);
+  }, [importing]);
+  const IMPORT_HINTS = [
+    'Reading files and inlining assets…',
+    'Running the creative’s own scripts…',
+    'Measuring the rendered layout…',
+    'Rebuilding editable layers…',
+  ];
   const zipRef = useRef<HTMLInputElement>(null);
   const htmlRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
@@ -201,6 +215,13 @@ export function NewProjectDialog({ mode, onClose }: Props) {
           <div className="dialog-foot">
             <button className="mini-btn" onClick={onClose}>Cancel</button>
             <button className="mini-btn accent" onClick={create}>Create project</button>
+          </div>
+        )}
+        {importing && (
+          <div className="import-veil">
+            <div className="aps-spin" />
+            <div className="aps-load-title">Importing creative…</div>
+            <div className="aps-load-hint">{IMPORT_HINTS[importStep % IMPORT_HINTS.length]}</div>
           </div>
         )}
       </div>
