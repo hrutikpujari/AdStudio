@@ -496,6 +496,7 @@ export function PropertiesPanel() {
                 <select value={el.config.variant} onChange={(e) => setCfg({ variant: e.target.value })}>
                   <option value="coverflow">Cover-flow</option>
                   <option value="stage">Stage (dimmed sides)</option>
+                  <option value="track">Track (slide strip)</option>
                 </select>
               </Row>
             )}

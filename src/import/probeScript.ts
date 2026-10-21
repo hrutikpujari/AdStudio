@@ -318,12 +318,41 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       : [];
     const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+    /* horizontal track slider: uniform ~frame-wide slides laid out in a
+       contiguous row — the source animates translateX(-i*100%) on the
+       container (e.g. .slider-track). Very different motion from
+       coverflow's class-swapping; detect it and emit the 'track'
+       variant so the exported runtime slides identically. */
+    const rowTrack =
+      valid.length >= 3 &&
+      natural[0].width >= frame.width * 0.8 &&
+      natural.every(
+        (r, i) =>
+          i === 0 ||
+          Math.abs(r.left - (natural[i - 1].left + natural[i - 1].width)) < 8,
+      );
+
+    const geom: Record<string, number> = {};
     // stage box: union of *visible* slide rects overlapping the container,
     // symmetrised around the centre slide so the component's 50%/50%
     // anchoring reproduces the source layout exactly.
     let box = { left: 0, top: 0, width: 0, height: 0 };
     let bestArea = 0;
     let ci = -1;
+    if (rowTrack) {
+      // viewport = the track's rect clipped to the visible frame
+      const nr = node.getBoundingClientRect();
+      const L = Math.max(nr.left, frame.left);
+      const T = Math.max(nr.top, frame.top);
+      box = {
+        left: L, top: T,
+        width: Math.min(nr.right, frame.right) - L,
+        height: Math.min(nr.bottom, frame.bottom) - T,
+      };
+      bestArea = box.width * box.height;
+      geom.slideWPct = 100;
+      geom.slideHPct = 100;
+    }
     rects.forEach((r, i) => {
       if (r.width >= 4 && r.height >= 4 && opas[i] > 0.05 &&
         r.left < frame.right && r.right > frame.left &&
@@ -333,7 +362,6 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
         if (a * b > bestArea) { bestArea = a * b; ci = i; }
       }
     });
-    const geom: Record<string, number> = {};
     if (ci >= 0) {
       const vis = rects.filter((r, i) => r.width >= 4 && r.height >= 4 && opas[i] > 0.05);
       const cc = rects[ci];
@@ -398,7 +426,9 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
 
     const stageLike = common.some((c) =>
       new RegExp(`\\.${esc(c)}\\.[a-zA-Z0-9_-]+[^{]*\\{[^}]*filter\\s*:\\s*brightness`, 'i').test(cfg.styleText));
-    const variant = stageLike || filters.some((f) => f && f !== 'none') ? 'stage' : 'coverflow';
+    const variant = rowTrack
+      ? 'track'
+      : stageLike || filters.some((f) => f && f !== 'none') ? 'stage' : 'coverflow';
     // autoplay period — the interval arg is often a named constant
     // (setInterval(fn, slideDuration)) rather than a literal
     const intervalMs = (() => {
@@ -408,12 +438,21 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       const v = new RegExp(`${m[1]}\\s*=\\s*(\\d+)`).exec(cfg.html);
       return v ? parseInt(v[1]) : 2500;
     })();
-    let transitionMs = 600;
-    for (const c of common) {
+    // transition speed: sniff the stylesheet for a transition duration
+    // on the slide classes OR the track/ancestor classes (e.g.
+    // .slider-track{transition:transform .5s}) — computed style can't be
+    // used because the probe freezes transitions to measure base states
+    let transitionMs = 0;
+    const sels = new Set<string>(common);
+    for (let a: Element | null = node; a && a !== container; a = a.parentElement) {
+      a.classList.forEach((c) => sels.add(c));
+    }
+    for (const c of sels) {
       const re = new RegExp(`\\.${esc(c)}[^{]*\\{[^}]*transition:[^;]*?(\\d*\\.?\\d+)s`, 'i');
       const m = re.exec(cfg.styleText);
       if (m) { transitionMs = Math.round(parseFloat(m[1]) * 1000); break; }
     }
+    if (!transitionMs) transitionMs = 600;
 
     return {
       id: uid(), type: 'carousel', name: 'Carousel',

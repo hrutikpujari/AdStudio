@@ -66,6 +66,19 @@ function CarouselView({ el, assets }: { el: CarouselElement; assets: AssetRef[] 
   const cardMode = c.slideLayout === 'card';
   const cardWPct = cardMode ? (c.cardWPct ?? 90) : undefined;
   const slideH = el.height * (sh / 100);
+  if (c.variant === 'track') {
+    // static preview of the resting state: current slide fills the viewport
+    const s0 = slides[0];
+    return (
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', display: 'flex' }}>
+        {s0 ? (
+          <div style={{ width: '100%', height: '100%', flexShrink: 0 }}>
+            <SlideThumb slide={s0} assets={assets} accent="#b3e0ff" fit={c.slideFit} cardWPct={cardWPct} slideH={slideH} cardStyle={c} />
+          </div>
+        ) : null}
+      </div>
+    );
+  }
   const side = (idx: number, dir: -1 | 1) =>
     slides[idx] && (
       <div style={{

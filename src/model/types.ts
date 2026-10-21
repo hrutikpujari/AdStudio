@@ -89,8 +89,10 @@ export interface CarouselConfig {
   /** pause autoplay when the pointer is over the component */
   pauseOnHover: boolean;
   /** 'coverflow' = clean 75%/scale(.8) side cards (CarouselSlider ref);
-   *  'stage' = wider offset, heavy dim filter (Danube Spotlight ref) */
-  variant: 'coverflow' | 'stage';
+   *  'stage' = wider offset, heavy dim filter (Danube Spotlight ref);
+   *  'track' = classic sliding strip — all slides in a row, the whole
+   *  track translates horizontally (translateX(-i*100%)) */
+  variant: 'coverflow' | 'stage' | 'track';
   /** measured geometry overrides (set by the importer to match a source
    *  creative): slide size as % of the component box, side offset as %
    *  of the slide's natural width, side scale factor.

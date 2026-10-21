@@ -1,0 +1,20 @@
+const { chromium } = require('playwright-core');
+(async () => {
+  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const page = await browser.newPage();
+  await page.goto('http://localhost:5173', { waitUntil: 'networkidle' });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  await page.locator('button:has-text("Open")').first().click();
+  await page.locator('input[webkitdirectory]').setInputFiles(process.argv[2]);
+  await page.waitForTimeout(7000);
+  const cur = await page.evaluate(() => localStorage.getItem('adpilot.projects.current'));
+  const proj = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), 'adpilot.project.' + cur);
+  console.log('fontCss len:', (proj.fontCss || '').length);
+  console.log('families:', [...new Set([...(proj.fontCss || '').matchAll(/font-family:\s*'([^']+)'/g)].map(m => m[1]))].join(', '));
+  console.log('weights:', [...new Set([...(proj.fontCss || '').matchAll(/font-weight:\s*(\d+)/g)].map(m => m[1]))].join(', '));
+  const injected = await page.evaluate(() => document.getElementById('aps-proj-fonts')?.textContent?.length ?? 0);
+  console.log('injected style len:', injected);
+  await browser.close();
+})();

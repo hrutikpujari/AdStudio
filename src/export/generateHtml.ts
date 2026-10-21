@@ -160,8 +160,54 @@ interface ComponentOut {
   html: string;
 }
 
+/** Track variant: a flex strip of 100%-wide slides; the whole track
+ *  translates by translateX(-i*100%) — matches creatives whose source
+ *  slides a .slider-track rather than swapping per-slide classes. */
+function genCarouselTrack(ctx: Ctx, el: CarouselElement, z: number): ComponentOut {
+  const c = el.config;
+  const cardMode = c.slideLayout === 'card';
+  const items = c.slides
+    .map((s) => `<div class="cr-titem"${s.url ? ` data-url="${esc(s.url)}"` : ''}>${cardMode ? cardInner(ctx, s, el, c) : slideInner(ctx, s, 'cr')}</div>`)
+    .join('');
+  const inner = `<div class="cr-wrap" data-hover="${c.pauseOnHover ? 1 : 0}"><div class="cr-track">${items}</div></div>`;
+  const css = `
+#css-${el.id} .cr-wrap{position:absolute;inset:0;overflow:hidden}
+#css-${el.id} .cr-track{display:flex;height:100%;transition:transform ${c.transitionMs}ms ease-in-out;will-change:transform}
+#css-${el.id} .cr-titem{min-width:100%;width:100%;height:100%;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+#css-${el.id} .cr-img{object-fit:${c.slideFit ?? 'cover'}}${cardCss(el, c)}`;
+  const runtime = `(function(){
+ var wrap=document.querySelector('#css-${el.id} .cr-wrap');if(!wrap)return;
+ var tr=wrap.querySelector('.cr-track');var n=tr.children.length;if(!n)return;
+ var cur=0;
+ function go(i){cur=((i%n)+n)%n;tr.style.transform='translateX(-'+(cur*100)+'%)';}
+ var iv=null;
+ ${c.autoplay ? `iv=setInterval(function(){go(cur+1);},${c.intervalMs});` : ''}
+ ${c.autoplay && c.pauseOnHover ? `wrap.addEventListener('mouseenter',function(){if(iv){clearInterval(iv);iv=null;}});
+ wrap.addEventListener('mouseleave',function(){if(!iv)iv=setInterval(function(){go(cur+1);},${c.intervalMs});});` : ''}
+ Array.prototype.forEach.call(document.querySelectorAll('[data-nav]'),function(b){
+  b.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();go(cur+(b.getAttribute('data-nav')==='prev'?-1:1));});
+ });
+})()`;
+  return { css, runtime, html: elShell(el, z, inner, '', ctx.scrubMs) };
+}
+
+/** Shared card-layout CSS emitted once per carousel element. */
+function cardCss(el: CarouselElement, c: CarouselElement['config']): string {
+  return `
+#css-${el.id} .cr-card{width:${c.cardWPct ?? 90}%;height:100%;margin:0 auto;background:#fff;border-radius:.6em;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 .15em .6em rgba(0,0,0,.1)}
+#css-${el.id} .cr-card-media{height:55%;flex-shrink:0;overflow:hidden}
+#css-${el.id} .cr-card-img{width:100%;height:100%;object-fit:${c.slideFit ?? 'cover'};display:block}
+#css-${el.id} .cr-card-ph{width:100%;height:100%;background:#f0f0f0}
+#css-${el.id} .cr-card-body{flex:1;min-height:0;padding:.4em .6em;display:flex;flex-direction:column;font-family:${c.cardFontFamily ?? 'Arial,sans-serif'};color:${c.cardTitleColor ?? '#222'}}
+#css-${el.id} .cr-card-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#css-${el.id} .cr-card-price{font-weight:700;font-size:1.15em;color:${c.cardPriceColor ?? '#c73a1d'};margin-top:.15em;display:flex;gap:.4em}
+#css-${el.id} .cr-card-price s{color:${c.cardOldPriceColor ?? '#999'};font-weight:400}
+#css-${el.id} .cr-card-cta{margin-top:auto;background:${c.cardCtaBg ?? '#333'};color:${c.cardCtaColor ?? '#fff'};border-radius:.25em;text-align:center;font-weight:700;font-size:.9em;padding:.35em 0}`;
+}
+
 function genCarousel(ctx: Ctx, el: CarouselElement, z: number): ComponentOut {
   const c = el.config;
+  if (c.variant === 'track') return genCarouselTrack(ctx, el, z);
   const stage = c.variant === 'stage';
   const cardMode = c.slideLayout === 'card';
   const slides = c.slides
@@ -181,17 +227,7 @@ function genCarousel(ctx: Ctx, el: CarouselElement, z: number): ComponentOut {
 #css-${el.id} .cr-item.left{transform:translate(calc(-50% - ${sx}%),-50%) scale(${ss});opacity:.5;z-index:2${stage ? ';filter:brightness(.45) saturate(.5)' : ''}}
 #css-${el.id} .cr-item.right{transform:translate(calc(-50% + ${sx}%),-50%) scale(${ss});opacity:.5;z-index:2${stage ? ';filter:brightness(.45) saturate(.5)' : ''}}
 #css-${el.id} .cr-item.hidden{transform:translate(calc(-50% - 160%),-50%) scale(.4);opacity:0;z-index:0}
-#css-${el.id} .cr-img{object-fit:${c.slideFit ?? 'cover'}}${
-    cardMode ? `
-#css-${el.id} .cr-card{width:${c.cardWPct ?? 90}%;height:100%;margin:0 auto;background:#fff;border-radius:.6em;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 .15em .6em rgba(0,0,0,.1)}
-#css-${el.id} .cr-card-media{height:55%;flex-shrink:0;overflow:hidden}
-#css-${el.id} .cr-card-img{width:100%;height:100%;object-fit:${c.slideFit ?? 'cover'};display:block}
-#css-${el.id} .cr-card-ph{width:100%;height:100%;background:#f0f0f0}
-#css-${el.id} .cr-card-body{flex:1;min-height:0;padding:.4em .6em;display:flex;flex-direction:column;font-family:${c.cardFontFamily ?? 'Arial,sans-serif'};color:${c.cardTitleColor ?? '#222'}}
-#css-${el.id} .cr-card-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#css-${el.id} .cr-card-price{font-weight:700;font-size:1.15em;color:${c.cardPriceColor ?? '#c73a1d'};margin-top:.15em;display:flex;gap:.4em}
-#css-${el.id} .cr-card-price s{color:${c.cardOldPriceColor ?? '#999'};font-weight:400}
-#css-${el.id} .cr-card-cta{margin-top:auto;background:${c.cardCtaBg ?? '#333'};color:${c.cardCtaColor ?? '#fff'};border-radius:.25em;text-align:center;font-weight:700;font-size:.9em;padding:.35em 0}` : ''}`;
+#css-${el.id} .cr-img{object-fit:${c.slideFit ?? 'cover'}}${cardMode ? cardCss(el, c) : ''}`;
   const runtime = `(function(){
  var wrap=document.querySelector('#css-${el.id} .cr-wrap');if(!wrap)return;
  var slides=Array.prototype.slice.call(wrap.querySelectorAll('.cr-item'));
@@ -496,6 +532,7 @@ export function generateHtml(
     ? `background:${project.artboard.backgroundColor} url('${esc(bgImg)}') ${project.artboard.backgroundFit === 'fill' ? '100% 100%' : project.artboard.backgroundFit} no-repeat`
     : `background:${project.artboard.backgroundColor}`;
 
+  const hasCarousel = project.elements.some((e) => e.type === 'carousel');
   project.elements.forEach((el, i) => {
     const z = i + 1;
     let html = '';
@@ -503,7 +540,17 @@ export function generateHtml(
       case 'image': html = genImage(ctx, el, z); break;
       case 'video': html = genVideo(ctx, el, z); break;
       case 'text': html = genText(ctx, el, z); break;
-      case 'button': html = genButton(ctx, el, z); break;
+      case 'button': {
+        html = genButton(ctx, el, z);
+        // carousel nav buttons: source creatives wire prev/next arrows to
+        // the slider, not click-through — mark them so the track runtime
+        // binds navigation instead of opening the clickTag
+        if (hasCarousel && !el.url) {
+          const nav = /prev/i.test(el.name) ? 'prev' : /next/i.test(el.name) ? 'next' : null;
+          if (nav) html = html.replace('<button class="ap-cta"', `<button class="ap-cta" data-nav="${nav}"`);
+        }
+        break;
+      }
       case 'shape': html = genShape(ctx, el, z); break;
       case 'carousel': { const r = genCarousel(ctx, el, z); componentCss.push(r.css); if (r.runtime) runtimes.push(r.runtime); html = r.html; break; }
       case 'card-stack': { const r = genCardStack(ctx, el, z); componentCss.push(r.css); if (r.runtime) runtimes.push(r.runtime); html = r.html; break; }
@@ -554,6 +601,7 @@ if(typeof window.clickTag==='undefined'){window.clickTag=clickTag;}
 document.addEventListener('DOMContentLoaded',function(){
  var ad=document.querySelector('.ad-container');
  if(ad){ad.addEventListener('click',function(e){
+  if(e.target&&e.target.closest&&e.target.closest('[data-nav]'))return;
   var btn=e.target&&e.target.closest?e.target.closest('[data-url]'):null;
   var url=(btn&&btn.getAttribute('data-url'))||window.clickTag||clickTag;
   if(url){e.preventDefault();window.open(url,'_blank');}

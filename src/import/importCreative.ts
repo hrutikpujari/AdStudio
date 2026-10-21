@@ -759,28 +759,55 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       // — not a usable bounding box. Instead, discover the modifier class
       // that represents the "shown/center" state (largest rendered area
       // among <base>.<modifier> selectors) and measure one slide in it.
+      // horizontal track slider: uniform ~frame-wide slides in a
+      // contiguous row — the source slides the whole strip via
+      // translateX(-i*100%), not per-slide class swapping
+      const rowTrack =
+        valid.length >= 3 &&
+        rects[0].width >= frame.width * 0.8 &&
+        rects.every(
+          (r, i) =>
+            i === 0 ||
+            Math.abs(r.left - (rects[i - 1].left + rects[i - 1].width)) < 8,
+        );
+
       let box = { left: 0, top: 0, width: 0, height: 0 };
+      let bestArea = 0;
+      if (rowTrack) {
+        // viewport = the track's rect clipped to the visible frame
+        const nr = node.getBoundingClientRect();
+        const L = Math.max(nr.left, frame.left);
+        const T = Math.max(nr.top, frame.top);
+        box = {
+          left: L, top: T,
+          width: Math.min(nr.right, frame.right) - L,
+          height: Math.min(nr.bottom, frame.bottom) - T,
+        };
+        bestArea = box.width * box.height;
+      }
+
       const modifiers = new Set<string>();
       for (const c of common) {
         const re = new RegExp(`\\.${esc(c)}\\.([a-zA-Z0-9_-]+)`, 'g');
         let mm: RegExpExecArray | null;
         while ((mm = re.exec(allStyleText))) modifiers.add(mm[1]);
       }
-      let bestArea = 0;
-      const probe = kids[0];
-      const probeSaved = probe.getAttribute('class');
-      for (const mod of modifiers) {
-        probe.classList.add(mod);
-        const pr = probe.getBoundingClientRect();
-        const area = pr.width * pr.height;
-        if (area > bestArea) {
-          bestArea = area;
-          box = { left: pr.left, top: pr.top, width: pr.width, height: pr.height };
+      if (!rowTrack) {
+        const probe = kids[0];
+        const probeSaved = probe.getAttribute('class');
+        for (const mod of modifiers) {
+          probe.classList.add(mod);
+          const pr = probe.getBoundingClientRect();
+          const area = pr.width * pr.height;
+          if (area > bestArea) {
+            bestArea = area;
+            box = { left: pr.left, top: pr.top, width: pr.width, height: pr.height };
+          }
+          probe.classList.remove(mod);
         }
-        probe.classList.remove(mod);
+        if (probeSaved !== null) probe.setAttribute('class', probeSaved);
+        else probe.removeAttribute('class');
       }
-      if (probeSaved !== null) probe.setAttribute('class', probeSaved);
-      else probe.removeAttribute('class');
 
       // fall back to the uniform-size union only if it's plausibly
       // within the artboard; otherwise center a default-sized box
@@ -800,7 +827,9 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       // since the default (class-less) state never shows it
       const stageLike = common.some((c) =>
         new RegExp(`\\.${esc(c)}\\.[a-zA-Z0-9_-]+[^{]*\\{[^}]*filter\\s*:\\s*brightness`, 'i').test(allStyleText));
-      const variant: 'coverflow' | 'stage' = stageLike || filters.some((f) => f && f !== 'none') ? 'stage' : 'coverflow';
+      const variant: 'coverflow' | 'stage' | 'track' = rowTrack
+        ? 'track'
+        : stageLike || filters.some((f) => f && f !== 'none') ? 'stage' : 'coverflow';
       // autoplay period — the interval arg is often a named constant
       // (setInterval(fn, slideDuration)) rather than a literal
       const intervalMs = (() => {
@@ -810,12 +839,21 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
         const v = new RegExp(`${m[1]}\\s*=\\s*(\\d+)`).exec(html);
         return v ? parseInt(v[1]) : 2500;
       })();
-      let transitionMs = 600;
-      for (const c of common) {
+      // transition speed: sniff the stylesheet for a duration on the
+      // slide classes OR the track/ancestor classes (e.g.
+      // .slider-track{transition:.5s}) — computed style reads 0s here
+      // because the measurement doc freezes transitions
+      let transitionMs = 0;
+      const sels = new Set<string>(common);
+      for (let a: Element | null = node; a && a !== container; a = a.parentElement) {
+        a.classList.forEach((c) => sels.add(c));
+      }
+      for (const c of sels) {
         const re = new RegExp(`\\.${esc(c)}[^{]*\\{[^}]*transition:[^;]*?(\\d*\\.?\\d+)s`, 'i');
         const m = re.exec(allStyleText);
         if (m) { transitionMs = Math.round(parseFloat(m[1]) * 1000); break; }
       }
+      if (!transitionMs) transitionMs = 600;
 
       return {
         id: uid(), type: 'carousel', name: 'Carousel',

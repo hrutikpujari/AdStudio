@@ -101,7 +101,7 @@ const elementSchema = z.discriminatedUnion('type', [
       intervalMs: z.number().min(200).max(60000),
       transitionMs: z.number().min(50).max(10000),
       pauseOnHover: z.boolean(),
-      variant: z.enum(['coverflow', 'stage']),
+      variant: z.enum(['coverflow', 'stage', 'track']),
       slideWPct: z.number().min(5).max(200).optional(),
       slideHPct: z.number().min(5).max(200).optional(),
       sideXPct: z.number().min(0).max(500).optional(),
