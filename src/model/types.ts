@@ -307,6 +307,9 @@ export interface CreativeProject {
   /** z-order: index 0 = bottom, last = top */
   elements: AdElement[];
   assets: AssetRef[];
+  /** Google Fonts family names chosen in the editor — emitted as a
+   *  css2 <link> in both the editor and the exported creative. */
+  googleFonts?: string[];
   /** @font-face rules harvested from an imported creative's CSS —
    *  remote URLs kept verbatim; local files rewritten to data URLs.
    *  Emitted into exports so imported webfonts still render. */

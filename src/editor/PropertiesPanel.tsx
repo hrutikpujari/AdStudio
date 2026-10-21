@@ -22,6 +22,7 @@ import type {
 import { ANIMATION_PRESETS } from '../render/animations';
 import { uid } from '../model/defaults';
 import { useEditor, useSelectedElement } from '../store/projectStore';
+import { FontPicker } from './FontPicker';
 
 const EASINGS: { value: EasingName; label: string }[] = [
   { value: 'linear', label: 'Linear' },
@@ -31,17 +32,6 @@ const EASINGS: { value: EasingName; label: string }[] = [
   { value: 'ease-in-out', label: 'Ease In-Out' },
   { value: 'cubic-bezier(0.25,0.46,0.45,0.94)', label: 'Ease Out Quad' },
   { value: 'cubic-bezier(0.4,0,0.2,1)', label: 'Standard' },
-];
-
-const FONTS = [
-  'Arial, sans-serif',
-  'Helvetica, Arial, sans-serif',
-  'Georgia, serif',
-  'Verdana, sans-serif',
-  'Tahoma, sans-serif',
-  'Trebuchet MS, sans-serif',
-  'Impact, sans-serif',
-  'Courier New, monospace',
 ];
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -380,9 +370,7 @@ export function PropertiesPanel() {
             <textarea value={el.content} onChange={(e) => set({ content: e.target.value })} />
           </Row>
           <Row label="Font">
-            <select value={el.fontFamily} onChange={(e) => set({ fontFamily: e.target.value })}>
-              {FONTS.map((f) => <option key={f} value={f}>{f.split(',')[0]}</option>)}
-            </select>
+            <FontPicker value={el.fontFamily} onChange={(v) => set({ fontFamily: v })} />
           </Row>
           <Row label="Size / Wt">
             <div className="prop-pair">
@@ -426,9 +414,7 @@ export function PropertiesPanel() {
           <h4>Button / CTA</h4>
           <Row label="Label"><input type="text" value={el.label} onChange={(e) => set({ label: e.target.value })} /></Row>
           <Row label="Font">
-            <select value={el.fontFamily} onChange={(e) => set({ fontFamily: e.target.value })}>
-              {FONTS.map((f) => <option key={f} value={f}>{f.split(',')[0]}</option>)}
-            </select>
+            <FontPicker value={el.fontFamily} onChange={(v) => set({ fontFamily: v })} />
           </Row>
           <Row label="Size / Wt">
             <div className="prop-pair">

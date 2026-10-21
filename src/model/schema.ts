@@ -205,6 +205,7 @@ export const projectSchema = z.object({
   ).max(200),
   clickTag: z.string().max(2000),
   fontCss: z.string().max(200_000).optional(),
+  googleFonts: z.array(z.string().max(120)).max(60).optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });

@@ -114,6 +114,8 @@ export interface EditorState {
   renameProject: (name: string) => void;
   setClickTag: (url: string) => void;
   setArtboard: (patch: Partial<CreativeProject['artboard']>) => void;
+  /** register a Google Fonts family so it's loaded in editor + export */
+  addGoogleFont: (family: string) => void;
 
   /* ---------- selection ---------- */
   select: (id: string | null) => void;
@@ -216,6 +218,11 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     setClickTag: (url) => mutate((p) => ({ ...p, clickTag: url })),
+
+    addGoogleFont: (family) => {
+      if ((get().project.googleFonts ?? []).includes(family)) return;
+      mutate((p) => ({ ...p, googleFonts: [...(p.googleFonts ?? []), family] }));
+    },
 
     setArtboard: (patch) => {
       mutate((p) => ({ ...p, artboard: { ...p.artboard, ...patch } }));

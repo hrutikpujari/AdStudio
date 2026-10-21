@@ -13,6 +13,7 @@ import { PreviewOverlay } from './PreviewOverlay';
 import { NewProjectDialog, SizeVariantDialog } from './NewProjectDialog';
 import { AiPanel } from './AiPanel';
 import { validateForExport, type ValidationIssue } from '../export/validate';
+import { fontFacesFromAssets, googleFontsCssUrl } from '../fonts/fonts';
 import { buildCreativeZip, downloadBlob } from '../export/exportZip';
 import { CheckCircle2, Film, Image as ImageIcon, Layers, Shapes, SlidersHorizontal, X } from 'lucide-react';
 
@@ -46,8 +47,9 @@ export function EditorLayout() {
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const playStartRef = useRef(0);
 
-  /* inject imported webfonts (project.fontCss carries @font-face rules
-     harvested from the source creative) so canvas text matches export */
+  /* inject project webfonts so canvas text matches the export:
+     @font-face rules (imported fontCss + uploaded font assets) go into
+     a style tag; chosen Google Fonts get a single css2 <link> */
   useEffect(() => {
     let st = document.getElementById('aps-proj-fonts') as HTMLStyleElement | null;
     if (!st) {
@@ -55,8 +57,19 @@ export function EditorLayout() {
       st.id = 'aps-proj-fonts';
       document.head.appendChild(st);
     }
-    st.textContent = project.fontCss ?? '';
-  }, [project.fontCss]);
+    st.textContent = `${fontFacesFromAssets(project.assets)}\n${project.fontCss ?? ''}`;
+    const gUrl = googleFontsCssUrl(project.googleFonts ?? []);
+    let link = document.getElementById('aps-gfonts') as HTMLLinkElement | null;
+    if (gUrl) {
+      if (!link) {
+        link = document.createElement('link');
+        link.id = 'aps-gfonts';
+        link.rel = 'stylesheet';
+        document.head.appendChild(link);
+      }
+      if (link.href !== gUrl) link.href = gUrl;
+    } else if (link) link.remove();
+  }, [project.fontCss, project.assets, project.googleFonts]);
 
   /* -------- fit zoom -------- */
   const fitZoom = useCallback(() => {

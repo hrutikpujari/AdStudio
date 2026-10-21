@@ -7,7 +7,9 @@ import { useEditor } from '../store/projectStore';
 export const ASSET_DRAG_TYPE = 'application/x-adpilot-asset';
 
 const MAX_ASSET_BYTES = 2.5 * 1024 * 1024; // keep zips light
-const OK_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
+const IMG_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
+const FONT_EXT = /\.(woff2?|ttf|otf)$/i;
+const isFontFile = (f: File) => FONT_EXT.test(f.name) || /^font\//.test(f.type);
 
 export function AssetsPanel() {
   const project = useEditor((s) => s.project);
@@ -23,8 +25,9 @@ export function AssetsPanel() {
     if (!files) return;
     setUploadErr('');
     Array.from(files).forEach((f) => {
-      if (!OK_TYPES.includes(f.type)) {
-        setUploadErr(`"${f.name}" is not a supported image type`);
+      const font = isFontFile(f);
+      if (!font && !IMG_TYPES.includes(f.type)) {
+        setUploadErr(`"${f.name}" is not a supported image or font type`);
         return;
       }
       if (f.size > MAX_ASSET_BYTES) {
@@ -33,6 +36,10 @@ export function AssetsPanel() {
       }
       const reader = new FileReader();
       reader.onload = () => {
+        if (font) {
+          addAsset({ name: f.name, kind: 'font', mimeType: f.type || 'font/woff2', src: String(reader.result) });
+          return;
+        }
         const img = new Image();
         img.onload = () => {
           addAsset({
@@ -57,6 +64,14 @@ export function AssetsPanel() {
     const asset = project.assets.find((a) => a.id === assetId);
     if (!asset) return;
     const sel = project.elements.find((e) => e.id === selectedId);
+    // clicking a font applies it to the selected text/button
+    if (asset.kind === 'font') {
+      if (sel && (sel.type === 'text' || sel.type === 'button') && !sel.locked) {
+        const family = asset.name.replace(/\.(woff2?|ttf|otf|eot)$/i, '');
+        updateElement(sel.id, { fontFamily: `'${family}', Arial, sans-serif` } as any);
+      }
+      return;
+    }
     if (sel?.type === 'image' && !sel.assetId && !sel.locked) {
       updateElement(sel.id, { assetId } as any);
       return;
@@ -78,12 +93,14 @@ export function AssetsPanel() {
             <div
               key={a.id}
               className="asset-thumb"
-              title={`${a.name} — click to add, or drag onto the canvas`}
-              draggable
+              title={a.kind === 'font' ? `${a.name} — click to apply to selected text` : `${a.name} — click to add, or drag onto the canvas`}
+              draggable={a.kind !== 'font'}
               onDragStart={(e) => onDragStart(e, a.id)}
               onClick={() => placeAsset(a.id)}
             >
-              <img src={a.src} alt={a.name} draggable={false} />
+              {a.kind === 'font'
+                ? <span className="font-tile" style={{ fontFamily: `'${a.name.replace(/\.(woff2?|ttf|otf|eot)$/i, '')}', sans-serif` }}>Aa</span>
+                : <img src={a.src} alt={a.name} draggable={false} />}
               <button
                 className="del"
                 draggable={false}
@@ -96,13 +113,13 @@ export function AssetsPanel() {
           ))}
         </div>
         <div className="asset-upload" onClick={() => fileRef.current?.click()}>
-          <Upload size={14} /> Upload images
+          <Upload size={14} /> Upload images / fonts
         </div>
         {uploadErr && <div style={{ color: 'var(--danger)', fontSize: 10.5, marginTop: 5 }}>{uploadErr}</div>}
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+          accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,.woff2,.woff,.ttf,.otf"
           multiple
           hidden
           onChange={(e) => { onFiles(e.target.files); e.target.value = ''; }}

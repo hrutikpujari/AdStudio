@@ -16,6 +16,7 @@ import type {
   VideoElement,
 } from '../model/types';
 import { allKeyframesCSS, animationShorthand } from '../render/animations';
+import { fontFacesFromAssets, googleFontsCssUrl } from '../fonts/fonts';
 
 /**
  * Generates a standalone HTML5 creative document from a project.
@@ -570,7 +571,9 @@ export function generateHtml(
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <meta name="ad.size" content="width=${W},height=${H}"/>
 <title>${esc(project.name)}</title>
+${googleFontsCssUrl(project.googleFonts ?? []) ? `<link rel="stylesheet" href="${esc(googleFontsCssUrl(project.googleFonts ?? [])!)}"/>` : ''}
 <style>
+${fontFacesFromAssets(project.assets)}
 ${project.fontCss ?? ''}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#F2F0F0;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:Arial,sans-serif}
