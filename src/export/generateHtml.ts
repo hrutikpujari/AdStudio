@@ -59,11 +59,13 @@ function cardInner(ctx: Ctx, s: SlideConfig, el: CarouselElement, c: CarouselEle
     ? `<img src="${esc(src)}" alt="${esc(s.title)}" class="cr-card-img" draggable="false"/>`
     : `<div class="cr-card-ph"></div>`;
   return (
-    `<div class="cr-card" style="font-size:${fs}px"${c.cardDir ? ` dir="${c.cardDir}"` : ''}>` +
+    `<div class="cr-card" style="font-size:${fs}px">` +
     `<div class="cr-card-media">${img}</div>` +
     `<div class="cr-card-body">` +
-    `<div class="cr-card-title">${esc(s.title)}</div>` +
-    `<div class="cr-card-price">${s.oldPrice ? `<s>${esc(s.oldPrice)}</s>` : ''}<b>${esc(s.price ?? '')}</b></div>` +
+    // dir/rtl lives on the TITLE only — that's how the source marks it;
+    // putting it on the whole card right-aligns the price + CTA too
+    `<div class="cr-card-title"${c.cardDir ? ` dir="${c.cardDir}"` : ''}>${esc(s.title)}</div>` +
+    `<div class="cr-card-price">${s.oldPrice ? `<s>${esc(s.oldPrice)}</s> ` : ''}<b>${esc(s.price ?? '')}</b></div>` +
     (s.ctaLabel ? `<div class="cr-card-cta">${esc(s.ctaLabel)}</div>` : '') +
     `</div></div>`
   );
@@ -196,14 +198,14 @@ function genCarouselTrack(ctx: Ctx, el: CarouselElement, z: number): ComponentOu
 function cardCss(el: CarouselElement, c: CarouselElement['config']): string {
   return `
 #css-${el.id} .cr-card{width:${c.cardWPct ?? 90}%;height:100%;margin:0 auto;background:#fff;border-radius:.6em;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 .15em .6em rgba(0,0,0,.1)}
-#css-${el.id} .cr-card-media{height:55%;flex-shrink:0;overflow:hidden}
+#css-${el.id} .cr-card-media{height:${c.cardImgPx ? `${c.cardImgPx}px` : '55%'};flex-shrink:0;overflow:hidden}
 #css-${el.id} .cr-card-img{width:100%;height:100%;object-fit:${c.slideFit ?? 'cover'};display:block}
 #css-${el.id} .cr-card-ph{width:100%;height:100%;background:#f0f0f0}
-#css-${el.id} .cr-card-body{flex:1;min-height:0;padding:.4em .6em;display:flex;flex-direction:column;font-family:${c.cardFontFamily ?? 'Arial,sans-serif'};color:${c.cardTitleColor ?? '#222'}}
-#css-${el.id} .cr-card-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#css-${el.id} .cr-card-price{font-weight:700;font-size:1.15em;color:${c.cardPriceColor ?? '#c73a1d'};margin-top:.15em;display:flex;gap:.4em}
+#css-${el.id} .cr-card-body{flex:1;min-height:0;padding:${c.cardPadPx != null ? `${c.cardPadPx}px` : '.4em .6em'};display:flex;flex-direction:column;font-family:${c.cardFontFamily ?? 'Arial,sans-serif'};color:${c.cardTitleColor ?? '#222'}}
+#css-${el.id} .cr-card-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:${c.cardTitlePx ? `${c.cardTitlePx}px` : '1em'};line-height:1.3${c.cardTitleAlign ? `;text-align:${c.cardTitleAlign}` : ''}}
+#css-${el.id} .cr-card-price{font-weight:700;font-size:${c.cardPricePx ? `${c.cardPricePx}px` : '1.15em'};color:${c.cardPriceColor ?? '#c73a1d'};margin-top:.15em}
 #css-${el.id} .cr-card-price s{color:${c.cardOldPriceColor ?? '#999'};font-weight:400}
-#css-${el.id} .cr-card-cta{margin-top:auto;background:${c.cardCtaBg ?? '#333'};color:${c.cardCtaColor ?? '#fff'};border-radius:.25em;text-align:center;font-weight:700;font-size:.9em;padding:.35em 0}`;
+#css-${el.id} .cr-card-cta{margin-top:auto;background:${c.cardCtaBg ?? '#333'};color:${c.cardCtaColor ?? '#fff'};border-radius:${c.cardCtaRadiusPx != null ? `${c.cardCtaRadiusPx}px` : '.25em'};text-align:center;font-weight:700;font-size:${c.cardCtaPx ? `${c.cardCtaPx}px` : '.9em'};padding:${c.cardPadPx != null ? `${c.cardPadPx}px 0` : '.35em 0'}}`;
 }
 
 function genCarousel(ctx: Ctx, el: CarouselElement, z: number): ComponentOut {

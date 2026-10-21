@@ -116,6 +116,13 @@ const elementSchema = z.discriminatedUnion('type', [
       cardOldPriceColor: z.string().max(60).optional(),
       cardCtaBg: z.string().max(60).optional(),
       cardCtaColor: z.string().max(60).optional(),
+      cardTitlePx: z.number().min(4).max(200).optional(),
+      cardPricePx: z.number().min(4).max(200).optional(),
+      cardCtaPx: z.number().min(4).max(100).optional(),
+      cardImgPx: z.number().min(10).max(800).optional(),
+      cardPadPx: z.number().min(0).max(100).optional(),
+      cardCtaRadiusPx: z.number().min(0).max(60).optional(),
+      cardTitleAlign: z.enum(['left', 'center', 'right']).optional(),
     }),
   }),
   z.object({

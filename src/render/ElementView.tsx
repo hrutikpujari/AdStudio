@@ -27,21 +27,22 @@ function SlideThumb({ slide, assets, accent, fit = 'cover', cardWPct, slideH, ca
   if (card) {
     const fs = Math.max(7, (slideH ?? 200) * 0.055);
     const cs: Partial<CarouselElement['config']> = cardStyle ?? {};
+    const pad = cs.cardPadPx != null ? `${cs.cardPadPx}px` : '4% 6%';
     return (
-      <div dir={cs.cardDir} style={{ width: `${cardWPct}%`, height: '100%', margin: '0 auto', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: fs * 0.6, boxShadow: '0 2px 8px rgba(0,0,0,.1)', fontSize: fs }}>
-        <div style={{ height: '55%', overflow: 'hidden', flexShrink: 0 }}>
+      <div style={{ width: `${cardWPct}%`, height: '100%', margin: '0 auto', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: fs * 0.6, boxShadow: '0 2px 8px rgba(0,0,0,.1)', fontSize: fs }}>
+        <div style={{ height: cs.cardImgPx ? `${cs.cardImgPx}px` : '55%', overflow: 'hidden', flexShrink: 0 }}>
           {src
             ? <img src={src} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: fit, display: 'block' }} />
             : <div className="ce-ph" style={{ borderColor: accent, color: accent, height: '100%' }}><span>IMAGE</span></div>}
         </div>
-        <div style={{ flex: 1, padding: '4% 6%', display: 'flex', flexDirection: 'column', minHeight: 0, fontFamily: cs.cardFontFamily ?? 'Arial, sans-serif', color: cs.cardTitleColor ?? '#222' }}>
-          <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{slide.title}</div>
-          <div style={{ fontWeight: 700, fontSize: '1.15em', color: cs.cardPriceColor ?? '#c73a1d', marginTop: '0.15em', display: 'flex', gap: '0.4em' }}>
-            {slide.oldPrice ? <span style={{ color: cs.cardOldPriceColor ?? '#999', textDecoration: 'line-through' }}>{slide.oldPrice}</span> : null}
+        <div style={{ flex: 1, padding: pad, display: 'flex', flexDirection: 'column', minHeight: 0, fontFamily: cs.cardFontFamily ?? 'Arial, sans-serif', color: cs.cardTitleColor ?? '#222' }}>
+          <div dir={cs.cardDir} style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: cs.cardTitlePx ?? '1em', lineHeight: 1.3, textAlign: cs.cardTitleAlign }}>{slide.title}</div>
+          <div style={{ fontWeight: 700, fontSize: cs.cardPricePx ?? '1.15em', color: cs.cardPriceColor ?? '#c73a1d', marginTop: '0.15em' }}>
+            {slide.oldPrice ? <span style={{ color: cs.cardOldPriceColor ?? '#999', textDecoration: 'line-through', fontWeight: 400, marginRight: '0.3em' }}>{slide.oldPrice}</span> : null}
             <span>{slide.price}</span>
           </div>
           {slide.ctaLabel
-            ? <div style={{ marginTop: 'auto', background: cs.cardCtaBg ?? '#333', color: cs.cardCtaColor ?? '#fff', borderRadius: 3, textAlign: 'center', fontWeight: 700, fontSize: '0.9em', padding: '0.35em 0' }}>{slide.ctaLabel}</div>
+            ? <div style={{ marginTop: 'auto', background: cs.cardCtaBg ?? '#333', color: cs.cardCtaColor ?? '#fff', borderRadius: cs.cardCtaRadiusPx ?? 3, textAlign: 'center', fontWeight: 700, fontSize: cs.cardCtaPx ?? '0.9em', padding: cs.cardPadPx != null ? `${cs.cardPadPx}px 0` : '0.35em 0' }}>{slide.ctaLabel}</div>
             : null}
         </div>
       </div>

@@ -264,6 +264,7 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
     // full-bleed slide) — measured from the largest card-like child
     let cardWPct: number | undefined;
     let cardCss: Record<string, string> | undefined;
+    let cardNum: Record<string, number> | undefined;
     if (cardish) {
       const ki = slideMeta.findIndex((m) => m.title || m.price);
       const sm = slideMeta[ki];
@@ -297,6 +298,26 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       if (oc) cardCss.cardOldPriceColor = oc;
       if (cbg && cbg !== 'transparent') cardCss.cardCtaBg = cbg;
       if (cc) cardCss.cardCtaColor = cc;
+      // px metrics: real font sizes, fixed card-image height, content
+      // padding, CTA radius, title align — keeps the card faithful to
+      // the source instead of our em-scaled approximation
+      const px = (v: string) => { const n = parseFloat(v); return Number.isFinite(n) ? Math.round(n * 10) / 10 : 0; };
+      cardNum = {};
+      const tfs = tcs ? px(tcs.fontSize) : 0;
+      const pfs = pcs ? px(pcs.fontSize) : 0;
+      const cfs = ccs ? px(ccs.fontSize) : 0;
+      if (tfs >= 4) cardNum.cardTitlePx = tfs;
+      if (pfs >= 4) cardNum.cardPricePx = pfs;
+      if (cfs >= 4) cardNum.cardCtaPx = cfs;
+      if (tcs && (tcs.textAlign === 'left' || tcs.textAlign === 'center' || tcs.textAlign === 'right'))
+        cardCss.cardTitleAlign = tcs.textAlign;
+      const imgR = imgs[ki]?.getBoundingClientRect();
+      if (imgR && imgR.height >= 10) cardNum.cardImgPx = Math.round(imgR.height);
+      const bodyEl = kids[ki]?.querySelector('[class*="content" i]') ?? inner;
+      const bPad = bodyEl ? px(W.getComputedStyle(bodyEl).paddingTop) : 0;
+      if (bPad) cardNum.cardPadPx = bPad;
+      const cbr = ccs ? px(ccs.borderTopLeftRadius) : 0;
+      if (cbr) cardNum.cardCtaRadiusPx = cbr;
     }
 
     const slides = kids.map((_, i) => ({
@@ -468,6 +489,7 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
         ...(cardish ? { slideLayout: 'card' } : {}),
         ...(cardWPct != null ? { cardWPct } : {}),
         ...(cardCss ?? {}),
+        ...(cardNum ?? {}),
         ...(geom.slideWPct != null ? geom : {}),
       },
     };

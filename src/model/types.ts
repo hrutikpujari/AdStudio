@@ -119,6 +119,17 @@ export interface CarouselConfig {
   cardOldPriceColor?: string;
   cardCtaBg?: string;
   cardCtaColor?: string;
+  /** measured px metrics so card layout matches the source exactly —
+   *  font sizes in real px (not em-scaled), fixed image height,
+   *  content padding, CTA radius, and the title's text-align
+   *  (dir/rtl applies to the title only, NOT the whole card) */
+  cardTitlePx?: number;
+  cardPricePx?: number;
+  cardCtaPx?: number;
+  cardImgPx?: number;
+  cardPadPx?: number;
+  cardCtaRadiusPx?: number;
+  cardTitleAlign?: 'left' | 'center' | 'right';
 }
 
 export interface CardStackConfig {
