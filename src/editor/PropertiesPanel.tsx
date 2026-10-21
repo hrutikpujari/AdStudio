@@ -1,5 +1,11 @@
 import type { ChangeEvent } from 'react';
 import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignStartHorizontal,
+  AlignStartVertical,
   ArrowDown,
   ArrowUp,
   ChevronsDown,
@@ -262,6 +268,7 @@ export function PropertiesPanel() {
   const updateElementConfig = useEditor((s) => s.updateElementConfig);
   const reorderElement = useEditor((s) => s.reorderElement);
   const assets = useEditor((s) => s.project.assets);
+  const artboard = useEditor((s) => s.project.artboard);
 
   if (!el) {
     return (
@@ -292,6 +299,14 @@ export function PropertiesPanel() {
             <Num value={el.width} min={8} onChange={(v) => set({ width: v })} />
             <Num value={el.height} min={8} onChange={(v) => set({ height: v })} />
           </div>
+        </Row>
+        <Row label="Align">
+          <button className="mini-btn" title="Align left" onClick={() => set({ x: 0 })}><AlignStartVertical size={12} /></button>
+          <button className="mini-btn" title="Center horizontally" onClick={() => set({ x: Math.round((artboard.width - el.width) / 2) })}><AlignCenterVertical size={12} /></button>
+          <button className="mini-btn" title="Align right" onClick={() => set({ x: Math.round(artboard.width - el.width) })}><AlignEndVertical size={12} /></button>
+          <button className="mini-btn" title="Align top" onClick={() => set({ y: 0 })}><AlignStartHorizontal size={12} /></button>
+          <button className="mini-btn" title="Center vertically" onClick={() => set({ y: Math.round((artboard.height - el.height) / 2) })}><AlignCenterHorizontal size={12} /></button>
+          <button className="mini-btn" title="Align bottom" onClick={() => set({ y: Math.round(artboard.height - el.height) })}><AlignEndHorizontal size={12} /></button>
         </Row>
         <Row label="Rotation">
           <Num value={el.rotation} min={-360} max={360} onChange={(v) => set({ rotation: v })} />

@@ -320,6 +320,11 @@ input[type='range'] { accent-color: var(--accent); }
 .ce.locked { cursor: not-allowed; }
 .ce.hidden-el { display: none; }
 
+/* smart-guide lines shown while dragging (thickness set inline = 1/zoom) */
+.snap-guide { position: absolute; background: #ff3d71; z-index: 1001; pointer-events: none; }
+.snap-guide.v { top: 0; bottom: 0; }
+.snap-guide.h { left: 0; right: 0; }
+
 .rh {
   position: absolute;
   width: 8px; height: 8px;
