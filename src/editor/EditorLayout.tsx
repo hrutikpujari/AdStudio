@@ -10,7 +10,7 @@ import { Artboard } from './Artboard';
 import { PropertiesPanel } from './PropertiesPanel';
 import { TimelinePanel } from './TimelinePanel';
 import { PreviewOverlay } from './PreviewOverlay';
-import { NewProjectDialog } from './NewProjectDialog';
+import { NewProjectDialog, SizeVariantDialog } from './NewProjectDialog';
 import { AiPanel } from './AiPanel';
 import { validateForExport, type ValidationIssue } from '../export/validate';
 import { buildCreativeZip, downloadBlob } from '../export/exportZip';
@@ -33,7 +33,7 @@ export function EditorLayout() {
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
 
-  const [dialog, setDialog] = useState<'new' | 'open' | 'ai' | 'validate' | null>(null);
+  const [dialog, setDialog] = useState<'new' | 'open' | 'ai' | 'validate' | 'variant' | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
   const [scrubMs, setScrubMs] = useState<number | null>(null);
@@ -215,6 +215,7 @@ export function EditorLayout() {
         onValidate={runValidate}
         onExport={runExport}
         onAi={() => setDialog('ai')}
+        onVariant={() => setDialog('variant')}
       />
 
       <div
@@ -297,6 +298,9 @@ export function EditorLayout() {
 
       {(dialog === 'new' || dialog === 'open') && (
         <NewProjectDialog mode={dialog} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'variant' && (
+        <SizeVariantDialog onClose={() => setDialog(null)} />
       )}
       {dialog === 'ai' && (
         <AiPanel

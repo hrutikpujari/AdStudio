@@ -14,6 +14,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize,
+  Proportions,
 } from 'lucide-react';
 import { AD_SIZES } from '../model/types';
 import { useEditor } from '../store/projectStore';
@@ -31,11 +32,12 @@ interface Props {
   onValidate: () => void;
   onExport: () => void;
   onAi: () => void;
+  onVariant: () => void;
 }
 
 export function TopToolbar({
   zoom, onZoom, onNewProject, onOpenProject, onPreview, onStopPreview,
-  onRestart, previewOpen, onValidate, onExport, onAi,
+  onRestart, previewOpen, onValidate, onExport, onAi, onVariant,
 }: Props) {
   const project = useEditor((s) => s.project);
   const renameProject = useEditor((s) => s.renameProject);
@@ -131,6 +133,9 @@ export function TopToolbar({
           ))}
           <option value="custom">Custom</option>
         </select>
+        <button className="tb-btn" onClick={onVariant} title="Duplicate as a different ad size — rescales all elements">
+          <Proportions size={14} /> Variant
+        </button>
       </div>
 
       <div className="tb-sep" />

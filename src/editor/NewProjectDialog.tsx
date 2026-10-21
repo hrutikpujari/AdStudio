@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileArchive, FileCode, FolderOpen, Trash2, X } from 'lucide-react';
 import { AD_SIZES } from '../model/types';
-import { TEMPLATES } from '../model/defaults';
+import { TEMPLATES, scaleProject } from '../model/defaults';
 import { useEditor } from '../store/projectStore';
 import { useUi } from '../store/uiStore';
 import {
@@ -224,6 +224,69 @@ export function NewProjectDialog({ mode, onClose }: Props) {
             <div className="aps-load-hint">{IMPORT_HINTS[importStep % IMPORT_HINTS.length]}</div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Duplicate the current project at a different ad size — elements are
+ *  rescaled so the variant starts from a proportionally-correct layout. */
+export function SizeVariantDialog({ onClose }: { onClose: () => void }) {
+  const project = useEditor((s) => s.project);
+  const replaceProject = useEditor((s) => s.replaceProject);
+  const toast = useUi((s) => s.toast);
+  const cur = `${project.artboard.width}x${project.artboard.height}`;
+  const [cw, setCw] = useState(300);
+  const [ch, setCh] = useState(250);
+
+  const make = (w: number, h: number) => {
+    if (w === project.artboard.width && h === project.artboard.height) {
+      toast('Already at that size', 'err');
+      return;
+    }
+    const v = scaleProject(project, w, h);
+    replaceProject(v);
+    toast(`Created "${v.name}" — layout rescaled; adjust as needed`, 'ok');
+    onClose();
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-head">
+          <h3>Create size variant</h3>
+          <button className="mini-btn" onClick={onClose}><X size={12} /></button>
+        </div>
+        <div className="dialog-body">
+          <div style={{ fontSize: 11.5, color: 'var(--text-dim)', marginBottom: 10 }}>
+            Duplicates <b>{project.name}</b> ({cur}) at a new size and rescales every
+            element — positions, sizes and fonts. Cross-shape conversions still need a
+            quick manual pass.
+          </div>
+          <div className="size-grid">
+            {AD_SIZES.map((s) => (
+              <button
+                key={`${s.w}x${s.h}`}
+                className="size-opt"
+                disabled={cur === `${s.w}x${s.h}`}
+                onClick={() => make(s.w, s.h)}
+              >
+                <b>{s.w} × {s.h}</b>
+                <span>{s.label.split('—')[1]?.trim() ?? ''}</span>
+              </button>
+            ))}
+          </div>
+          <div className="prop-row" style={{ marginTop: 10 }}>
+            <label>Custom W / H</label>
+            <div className="prop-pair">
+              <input type="number" value={cw} min={10} max={3000} onChange={(e) => setCw(+e.target.value)} />
+              <input type="number" value={ch} min={10} max={3000} onChange={(e) => setCh(+e.target.value)} />
+            </div>
+            <button className="mini-btn accent" style={{ marginTop: 8 }} onClick={() => make(cw, ch)}>
+              Create custom variant
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

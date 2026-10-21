@@ -236,6 +236,53 @@ export function createProject(name: string, width: number, height: number): Crea
   };
 }
 
+/** Duplicate a project at a different ad size. Geometry scales per-axis
+ *  so the layout fills the new canvas; font sizes, radii and borders
+ *  scale by the geometric mean so text stays proportionally readable.
+ *  Cross-aspect conversions (e.g. 300×600 → 728×90) always need manual
+ *  polish — this gives an editable starting point, not a final layout. */
+export function scaleProject(p: CreativeProject, width: number, height: number): CreativeProject {
+  const sx = width / p.artboard.width;
+  const sy = height / p.artboard.height;
+  const g = Math.sqrt(sx * sy);
+  const rn = (n: number) => Math.round(n * 10) / 10;
+  const font = (n: number) => Math.min(200, Math.max(6, rn(n * g)));
+
+  const elements = p.elements.map((src) => {
+    const e = structuredClone(src);
+    e.x = rn(e.x * sx);
+    e.y = rn(e.y * sy);
+    e.width = Math.max(1, rn(e.width * sx));
+    e.height = Math.max(1, rn(e.height * sy));
+    if (e.type === 'text') {
+      e.fontSize = font(e.fontSize);
+      e.letterSpacing = rn(e.letterSpacing * g);
+    } else if (e.type === 'button') {
+      e.fontSize = font(e.fontSize);
+      e.borderRadius = rn(e.borderRadius * g);
+    } else if (e.type === 'image') {
+      e.borderRadius = rn(e.borderRadius * g);
+    } else if (e.type === 'shape') {
+      e.borderRadius = rn(e.borderRadius * g);
+      e.borderWidth = Math.max(0, rn(e.borderWidth * g));
+    } else if (e.type === 'cube') {
+      e.config.faceSize = Math.max(20, rn(e.config.faceSize * g));
+    }
+    return e;
+  });
+
+  const now = Date.now();
+  return {
+    ...structuredClone({ ...p, elements: [] }),
+    id: uid('prj'),
+    name: `${p.name.replace(/\s*\d+\s*[x×]\s*\d+\s*$/, '').trim()} ${width}x${height}`,
+    artboard: { ...p.artboard, width, height },
+    elements,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Templates derived from the inspected creative references            */
 /* ------------------------------------------------------------------ */
