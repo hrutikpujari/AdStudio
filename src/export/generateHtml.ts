@@ -178,13 +178,21 @@ function genCarouselTrack(ctx: Ctx, el: CarouselElement, z: number): ComponentOu
 #css-${el.id} .cr-track{display:flex;height:100%;transition:transform ${c.transitionMs}ms ease-in-out;will-change:transform}
 #css-${el.id} .cr-titem{min-width:100%;width:100%;height:100%;flex-shrink:0;display:flex;align-items:center;justify-content:center}
 #css-${el.id} .cr-img{object-fit:${c.slideFit ?? 'cover'}}${cardCss(el, c)}`;
+  // when this carousel enters via a pane transition, its autoplay
+  // shouldn't tick while it's still off-stage — hold the first
+  // interval until the entrance animation has finished
+  const enterDelay = el.animation?.preset === 'pane-in-right'
+    ? el.animation.delay + el.animation.duration
+    : 0;
   const runtime = `(function(){
  var wrap=document.querySelector('#css-${el.id} .cr-wrap');if(!wrap)return;
  var tr=wrap.querySelector('.cr-track');var n=tr.children.length;if(!n)return;
  var cur=0;
  function go(i){cur=((i%n)+n)%n;tr.style.transform='translateX(-'+(cur*100)+'%)';}
  var iv=null;
- ${c.autoplay ? `iv=setInterval(function(){go(cur+1);},${c.intervalMs});` : ''}
+ ${c.autoplay ? (enterDelay
+    ? `setTimeout(function(){iv=setInterval(function(){go(cur+1);},${c.intervalMs});},${enterDelay});`
+    : `iv=setInterval(function(){go(cur+1);},${c.intervalMs});`) : ''}
  ${c.autoplay && c.pauseOnHover ? `wrap.addEventListener('mouseenter',function(){if(iv){clearInterval(iv);iv=null;}});
  wrap.addEventListener('mouseleave',function(){if(!iv)iv=setInterval(function(){go(cur+1);},${c.intervalMs});});` : ''}
  Array.prototype.forEach.call(document.querySelectorAll('[data-nav]'),function(b){
@@ -591,6 +599,8 @@ body{background:#F2F0F0;display:flex;justify-content:center;align-items:center;m
 .cr-ph-sub,.cs-ph-sub,.fan-ph-sub{font-size:8px;opacity:.7;margin-top:2px}
 .cr-img,.cs-img,.fan-img{width:100%;height:100%;object-fit:cover;display:block}
 ${allKeyframesCSS()}
+${project.elements.some((e) => e.animation?.preset === 'pane-in-right') ? `@keyframes ap-pane-in-right{0%{transform:translateX(${W}px)}100%{transform:translateX(0)}}` : ''}
+${project.elements.some((e) => e.animation?.preset === 'pane-out-left') ? `@keyframes ap-pane-out-left{0%{transform:translateX(0)}100%{transform:translateX(-${W}px)}}` : ''}
 ${componentCss.join('\n')}
 </style>
 </head>

@@ -6,6 +6,7 @@ const animationSchema = z.object({
     'none', 'fade-in', 'fade-out',
     'slide-in-left', 'slide-in-right', 'slide-in-top', 'slide-in-bottom',
     'zoom-in', 'rotate-in', 'flip-in-x', 'flip-in-y', 'bounce-in', 'pulse',
+    'pane-in-right', 'pane-out-left',
   ]),
   delay: z.number().min(0).max(60000),
   duration: z.number().min(50).max(60000),

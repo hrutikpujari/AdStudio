@@ -20,6 +20,8 @@ export const ANIMATION_PRESETS: { id: AnimationPreset; label: string }[] = [
   { id: 'flip-in-y', label: 'Flip In (Y)' },
   { id: 'bounce-in', label: 'Bounce In' },
   { id: 'pulse', label: 'Pulse (loop)' },
+  { id: 'pane-in-right', label: 'Pane In — Right' },
+  { id: 'pane-out-left', label: 'Pane Out — Left' },
 ];
 
 const KEYFRAMES: Record<Exclude<AnimationPreset, 'none'>, { name: string; css: string }> = {
@@ -70,6 +72,17 @@ const KEYFRAMES: Record<Exclude<AnimationPreset, 'none'>, { name: string; css: s
   'pulse': {
     name: 'ap-pulse',
     css: '0%,100%{transform:scale(1)}50%{transform:scale(1.06)}',
+  },
+  /* pane slides travel the full artboard width — the 300px here is a
+     placeholder; the exporter re-emits these keyframes at the real
+     artboard width so the distance is always exact */
+  'pane-in-right': {
+    name: 'ap-pane-in-right',
+    css: '0%{transform:translateX(300px)}100%{transform:translateX(0)}',
+  },
+  'pane-out-left': {
+    name: 'ap-pane-out-left',
+    css: '0%{transform:translateX(0)}100%{transform:translateX(-300px)}',
   },
 };
 

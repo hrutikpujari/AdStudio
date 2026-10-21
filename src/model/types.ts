@@ -34,7 +34,12 @@ export type AnimationPreset =
   | 'flip-in-x'
   | 'flip-in-y'
   | 'bounce-in'
-  | 'pulse';
+  | 'pulse'
+  /** multi-screen creatives: pane slides in from the right edge —
+   *  keyframes are emitted per-export with the artboard width as px */
+  | 'pane-in-right'
+  /** multi-screen creatives: pane slides out to the left edge */
+  | 'pane-out-left';
 
 export type EasingName =
   | 'linear'

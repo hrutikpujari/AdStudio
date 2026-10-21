@@ -576,6 +576,49 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
       return p != null && p !== lastPane;
     };
 
+    /* state class on the pane wrapper that translates it ~one pane
+       width (e.g. .screens-wrapper.show-screen2{translateX(-300px)}) —
+       replayed as real pane animations at the source's own timing */
+    let paneShift: { delay: number; duration: number } | null = null;
+    if (panes.length > 1) {
+      const wrap = panes[0].parentElement;
+      const escC = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      for (const wc of Array.from(wrap?.classList ?? [])) {
+        const re = new RegExp(
+          `\\.${escC(wc)}\\.([\\w-]+)[^{]*\\{[^}]*transform\\s*:\\s*translateX\\((-?[\\d.]+)px\\)`, 'i');
+        const m = re.exec(allStyleText);
+        if (!m || Math.abs(parseFloat(m[2])) < crect.width * 0.5) continue;
+        const tm = new RegExp(`\\.${escC(wc)}[^{]*\\{[^}]*transition:[^;]*?([\\d.]+)s`, 'i')
+          .exec(allStyleText);
+        const duration = tm ? Math.round(parseFloat(tm[1]) * 1000) : 800;
+        let delay = 3000;
+        const addIdx = html.search(
+          new RegExp(`classList\\.add\\(['"\`]?${escC(m[1])}`));
+        if (addIdx >= 0) {
+          const tIdx = html.slice(0, addIdx).lastIndexOf('setTimeout(');
+          if (tIdx >= 0) {
+            const times = [...html.slice(tIdx, tIdx + 900).matchAll(/,\s*(\d+)\s*\)/g)]
+              .map((mm) => parseInt(mm[1]));
+            const d = Math.max(...times);
+            if (d > 0 && d <= 60000) delay = d;
+          }
+        }
+        paneShift = { delay, duration };
+        break;
+      }
+    }
+    const paneAnimFor = (n: Element) => {
+      if (!paneShift) return ANIM();
+      const p = paneOf(n);
+      if (!p) return ANIM();
+      return {
+        preset: p === lastPane ? ('pane-in-right' as const) : ('pane-out-left' as const),
+        delay: paneShift.delay, duration: paneShift.duration,
+        easing: 'ease-in-out' as const, iterations: 1 as const, direction: 'normal' as const,
+      };
+    };
+    const paneVisible = (n: Element) => (paneShift ? true : !inEarlyPane(n));
+
     // register a (possibly remote/data) <img> src as an asset, reusing
     // whatever was already captured — shared by the plain IMG branch
     // and the carousel-slide detector below
@@ -880,8 +923,8 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
         id: uid(), type: 'carousel', name: 'Carousel',
         x: Math.round(box.left - frame.left), y: Math.round(box.top - frame.top),
         width: Math.round(box.width), height: Math.round(box.height),
-        rotation: 0, opacity: 1, visible: !inEarlyPane(node), locked: false,
-        animation: ANIM(),
+        rotation: 0, opacity: 1, visible: paneVisible(node), locked: false,
+        animation: paneAnimFor(node),
         config: {
           slides, autoplay: true, intervalMs, transitionMs,
           pauseOnHover: /clearInterval/.test(html) && /mouseenter|mouseover/.test(html),
@@ -953,8 +996,8 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
         id: uid(), type: 'slice-flip', name: 'Slice Flip',
         x: Math.round(r.left - frameLeft(host)), y: Math.round(r.top - crect.top),
         width: Math.max(10, Math.round(r.width)), height: Math.max(10, Math.round(r.height)),
-        rotation: 0, opacity: 1, visible: !inEarlyPane(host), locked: false,
-        animation: ANIM(),
+        rotation: 0, opacity: 1, visible: paneVisible(host), locked: false,
+        animation: paneAnimFor(host),
         config: {
           slides,
           sliceCount: Math.min(20, Math.max(2, cfgNum(['SLICE_COUNT', 'sliceCount', 'NUM_SLICES'], 8))),
@@ -1031,9 +1074,9 @@ async function importHtml(html: string, src: Source): Promise<ImportResult> {
         const base = {
           x, y, width: w, height: h, rotation,
           opacity: initiallyHidden ? 1 : Math.min(1, Math.max(0, parseFloat(style.opacity) || 1)),
-          visible: !initiallyHidden && !offCanvas && !inEarlyPane(node),
+          visible: !initiallyHidden && !offCanvas && paneVisible(node),
           locked: false,
-          animation: ANIM(),
+          animation: paneAnimFor(node),
         };
 
         const tag = node.tagName;

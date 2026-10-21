@@ -145,6 +145,57 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
     return p != null && p !== lastPane;
   };
 
+  /* Does the pane wrapper get a state class that translates it ~one
+     pane width (e.g. .screens-wrapper.show-screen2{translateX(-300px)})?
+     If so we can replay the screen transition as real animations:
+     earlier panes slide out left, the last pane slides in from right,
+     at the source's own delay + transition duration. */
+  let paneShift: { delay: number; duration: number } | null = null;
+  if (panes.length > 1) {
+    const wrap = panes[0].parentElement;
+    const escC = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const wc of Array.from(wrap?.classList ?? [])) {
+      const re = new RegExp(
+        `\\.${escC(wc)}\\.([\\w-]+)[^{]*\\{[^}]*transform\\s*:\\s*translateX\\((-?[\\d.]+)px\\)`, 'i');
+      const m = re.exec(cfg.styleText);
+      if (!m || Math.abs(parseFloat(m[2])) < crect.width * 0.5) continue;
+      // duration: the wrapper's own transition declaration
+      const tm = new RegExp(`\\.${escC(wc)}[^{]*\\{[^}]*transition:[^;]*?([\\d.]+)s`, 'i')
+        .exec(cfg.styleText);
+      const duration = tm ? Math.round(parseFloat(tm[1]) * 1000) : 800;
+      // delay: the setTimeout whose callback adds the state class —
+      // take the LAST `,N)` in its window (the outer call's arg wins
+      // over nested timeouts inside the callback)
+      let delay = 3000;
+      const addIdx = cfg.html.search(
+        new RegExp(`classList\\.add\\(['"\`]?${escC(m[1])}`));
+      if (addIdx >= 0) {
+        const tIdx = cfg.html.slice(0, addIdx).lastIndexOf('setTimeout(');
+        if (tIdx >= 0) {
+          const times = [...cfg.html.slice(tIdx, tIdx + 900).matchAll(/,\s*(\d+)\s*\)/g)]
+            .map((mm) => parseInt(mm[1]));
+          const d = Math.max(...times);
+          if (d > 0 && d <= 60000) delay = d;
+        }
+      }
+      paneShift = { delay, duration };
+      break;
+    }
+  }
+  const paneAnimFor = (n: Element) => {
+    if (!paneShift) return ANIM();
+    const p = paneOf(n);
+    if (!p) return ANIM();
+    return {
+      preset: p === lastPane ? 'pane-in-right' : 'pane-out-left',
+      delay: paneShift.delay, duration: paneShift.duration,
+      easing: 'ease-in-out', iterations: 1, direction: 'normal',
+    };
+  };
+  // early panes are hidden layers only when we CAN'T replay the
+  // transition — with a detected shift they animate out on schedule
+  const paneVisible = (n: Element) => (paneShift ? true : !inEarlyPane(n));
+
   /* a container can be authored height:100% of an auto-height
      positioned ancestor — CSS resolves it to 0 and the box collapses
      even though its image content still renders. Fall back to the
@@ -479,8 +530,8 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       id: uid(), type: 'carousel', name: 'Carousel',
       x: Math.round(box.left - frame.left), y: Math.round(box.top - frame.top),
       width: Math.round(box.width), height: Math.round(box.height),
-      rotation: 0, opacity: 1, visible: !inEarlyPane(node), locked: false,
-      animation: ANIM(),
+      rotation: 0, opacity: 1, visible: paneVisible(node), locked: false,
+      animation: paneAnimFor(node),
       config: {
         slides, autoplay: true, intervalMs, transitionMs,
         pauseOnHover: /clearInterval/.test(cfg.html) && /mouseenter|mouseover/.test(cfg.html),
@@ -548,8 +599,8 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
       id: uid(), type: 'slice-flip', name: 'Slice Flip',
       x: Math.round(r.left - frameLeft(host)), y: Math.round(r.top - crect.top),
       width: Math.max(10, Math.round(r.width)), height: Math.max(10, Math.round(r.height)),
-      rotation: 0, opacity: 1, visible: !inEarlyPane(host), locked: false,
-      animation: ANIM(),
+      rotation: 0, opacity: 1, visible: paneVisible(host), locked: false,
+      animation: paneAnimFor(host),
       config: {
         slides,
         sliceCount: Math.min(20, Math.max(2, cfgNum(['SLICE_COUNT', 'sliceCount', 'NUM_SLICES'], 8))),
@@ -618,9 +669,9 @@ export function apsProbe(cfg: ProbeCfg): ProbeResult {
         const base = {
           x, y, width: w, height: h, rotation,
           opacity: initiallyHidden ? 1 : Math.min(1, Math.max(0, parseFloat(style.opacity) || 1)),
-          visible: !initiallyHidden && !offCanvas && !inEarlyPane(node),
+          visible: !initiallyHidden && !offCanvas && paneVisible(node),
           locked: false,
-          animation: ANIM(),
+          animation: paneAnimFor(node),
         };
 
         const tag = node.tagName;
